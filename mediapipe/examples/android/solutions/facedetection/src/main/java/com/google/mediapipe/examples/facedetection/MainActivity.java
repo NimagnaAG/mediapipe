@@ -28,7 +28,6 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.exifinterface.media.ExifInterface;
 // ContentResolver dependency
-import com.google.mediapipe.formats.proto.LocationDataProto.LocationData.RelativeKeypoint;
 import com.google.mediapipe.solutioncore.CameraInput;
 import com.google.mediapipe.solutioncore.SolutionGlSurfaceView;
 import com.google.mediapipe.solutioncore.VideoInput;
@@ -36,6 +35,7 @@ import com.google.mediapipe.solutions.facedetection.FaceDetection;
 import com.google.mediapipe.solutions.facedetection.FaceDetectionOptions;
 import com.google.mediapipe.solutions.facedetection.FaceDetectionResult;
 import com.google.mediapipe.solutions.facedetection.FaceKeypoint;
+import com.google.mediapipe.formats.proto.LocationDataProto.LocationData.RelativeKeypoint;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -98,6 +98,43 @@ public class MainActivity extends AppCompatActivity {
     }
   }
 
+  private Bitmap downscaleBitmap(Bitmap originalBitmap) {
+    double aspectRatio = (double) originalBitmap.getWidth() / originalBitmap.getHeight();
+    int width = imageView.getWidth();
+    int height = imageView.getHeight();
+    if (((double) imageView.getWidth() / imageView.getHeight()) > aspectRatio) {
+      width = (int) (height * aspectRatio);
+    } else {
+      height = (int) (width / aspectRatio);
+    }
+    return Bitmap.createScaledBitmap(originalBitmap, width, height, false);
+  }
+
+  private Bitmap rotateBitmap(Bitmap inputBitmap, InputStream imageData) throws IOException {
+    int orientation =
+        new ExifInterface(imageData)
+            .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+    if (orientation == ExifInterface.ORIENTATION_NORMAL) {
+      return inputBitmap;
+    }
+    Matrix matrix = new Matrix();
+    switch (orientation) {
+      case ExifInterface.ORIENTATION_ROTATE_90:
+        matrix.postRotate(90);
+        break;
+      case ExifInterface.ORIENTATION_ROTATE_180:
+        matrix.postRotate(180);
+        break;
+      case ExifInterface.ORIENTATION_ROTATE_270:
+        matrix.postRotate(270);
+        break;
+      default:
+        matrix.postRotate(0);
+    }
+    return Bitmap.createBitmap(
+        inputBitmap, 0, 0, inputBitmap.getWidth(), inputBitmap.getHeight(), matrix, true);
+  }
+
   /** Sets up the UI components for the static image demo. */
   private void setupStaticImageDemoUiComponents() {
     // The Intent to access gallery and read images as bitmap.
@@ -111,37 +148,16 @@ public class MainActivity extends AppCompatActivity {
                   Bitmap bitmap = null;
                   try {
                     bitmap =
-                        MediaStore.Images.Media.getBitmap(
-                            this.getContentResolver(), resultIntent.getData());
+                        downscaleBitmap(
+                            MediaStore.Images.Media.getBitmap(
+                                this.getContentResolver(), resultIntent.getData()));
                   } catch (IOException e) {
                     Log.e(TAG, "Bitmap reading error:" + e);
                   }
                   try {
                     InputStream imageData =
                         this.getContentResolver().openInputStream(resultIntent.getData());
-                    int orientation =
-                        new ExifInterface(imageData)
-                            .getAttributeInt(
-                                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
-                    if (orientation != ExifInterface.ORIENTATION_NORMAL) {
-                      Matrix matrix = new Matrix();
-                      switch (orientation) {
-                        case ExifInterface.ORIENTATION_ROTATE_90:
-                          matrix.postRotate(90);
-                          break;
-                        case ExifInterface.ORIENTATION_ROTATE_180:
-                          matrix.postRotate(180);
-                          break;
-                        case ExifInterface.ORIENTATION_ROTATE_270:
-                          matrix.postRotate(270);
-                          break;
-                        default:
-                          matrix.postRotate(0);
-                      }
-                      bitmap =
-                          Bitmap.createBitmap(
-                              bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-                    }
+                    bitmap = rotateBitmap(bitmap, imageData);
                   } catch (IOException e) {
                     Log.e(TAG, "Bitmap rotation error:" + e);
                   }
@@ -159,9 +175,9 @@ public class MainActivity extends AppCompatActivity {
             setupStaticImageModePipeline();
           }
           // Reads images from gallery.
-          Intent gallery =
-              new Intent(Intent.ACTION_PICK, MediaStore.Images.Media.INTERNAL_CONTENT_URI);
-          imageGetter.launch(gallery);
+          Intent pickImageIntent = new Intent(Intent.ACTION_PICK);
+          pickImageIntent.setDataAndType(MediaStore.Images.Media.INTERNAL_CONTENT_URI, "image/*");
+          imageGetter.launch(pickImageIntent);
         });
     imageView = new FaceDetectionResultImageView(this);
   }
@@ -224,9 +240,9 @@ public class MainActivity extends AppCompatActivity {
           stopCurrentPipeline();
           setupStreamingModePipeline(InputSource.VIDEO);
           // Reads video from gallery.
-          Intent gallery =
-              new Intent(Intent.ACTION_PICK, MediaStore.Video.Media.INTERNAL_CONTENT_URI);
-          videoGetter.launch(gallery);
+          Intent pickVideoIntent = new Intent(Intent.ACTION_PICK);
+          pickVideoIntent.setDataAndType(MediaStore.Video.Media.INTERNAL_CONTENT_URI, "video/*");
+          videoGetter.launch(pickVideoIntent);
         });
   }
 
@@ -318,8 +334,15 @@ public class MainActivity extends AppCompatActivity {
 
   private void logNoseTipKeypoint(
       FaceDetectionResult result, int faceIndex, boolean showPixelValues) {
+    if (result.multiFaceDetections().isEmpty()) {
+      return;
+    }
     RelativeKeypoint noseTip =
-        FaceDetection.getFaceKeypoint(result, faceIndex, FaceKeypoint.NOSE_TIP);
+        result
+            .multiFaceDetections()
+            .get(faceIndex)
+            .getLocationData()
+            .getRelativeKeypoints(FaceKeypoint.NOSE_TIP);
     // For Bitmaps, show the pixel values. For texture inputs, show the normalized coordinates.
     if (showPixelValues) {
       int width = result.inputBitmap().getWidth();

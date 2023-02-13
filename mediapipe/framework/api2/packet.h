@@ -27,6 +27,10 @@ using HolderBase = mediapipe::packet_internal::HolderBase;
 template <typename T>
 class Packet;
 
+struct AnyType {
+  AnyType() = delete;
+};
+
 // Type-erased packet.
 class PacketBase {
  public:
@@ -148,9 +152,8 @@ inline void CheckCompatibleType(const HolderBase& holder,
       << " was requested.";
 }
 
-struct Generic {
-  Generic() = delete;
-};
+// TODO: remove usage of internal::Generic and simply use AnyType.
+using Generic = ::mediapipe::api2::AnyType;
 
 template <class V, class U>
 struct IsCompatibleType : std::false_type {};
@@ -167,7 +170,6 @@ struct IsCompatibleType<V, OneOf<U...>>
 template <typename T>
 inline Packet<T> PacketBase::As() const {
   if (!payload_) return Packet<T>().At(timestamp_);
-  packet_internal::Holder<T>* typed_payload = payload_->As<T>();
   internal::CheckCompatibleType(*payload_, internal::Wrap<T>{});
   return Packet<T>(payload_).At(timestamp_);
 }
@@ -179,7 +181,7 @@ template <typename T = internal::Generic>
 class Packet;
 #if __cplusplus >= 201703L
 // Deduction guide to silence -Wctad-maybe-unsupported.
-explicit Packet()->Packet<internal::Generic>;
+explicit Packet() -> Packet<internal::Generic>;
 #endif  // C++17
 
 template <>
@@ -215,9 +217,10 @@ class Packet : public Packet<internal::Generic> {
     return typed_payload->data();
   }
   const T& operator*() const { return Get(); }
+  const T* operator->() const { return &Get(); }
 
-  template <typename U>
-  T GetOr(U&& v) const {
+  template <typename U, typename TT = T>
+  std::enable_if_t<!std::is_abstract_v<TT>, TT> GetOr(U&& v) const {
     return IsEmpty() ? static_cast<T>(absl::forward<U>(v)) : **this;
   }
 

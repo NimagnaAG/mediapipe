@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """MediaPipe solution drawing utils."""
 
 import math
@@ -28,7 +27,7 @@ from mediapipe.framework.formats import landmark_pb2
 
 _PRESENCE_THRESHOLD = 0.5
 _VISIBILITY_THRESHOLD = 0.5
-_RGB_CHANNELS = 3
+_BGR_CHANNELS = 3
 
 WHITE_COLOR = (224, 224, 224)
 BLACK_COLOR = (0, 0, 0)
@@ -74,7 +73,7 @@ def draw_detection(
   """Draws the detction bounding box and keypoints on the image.
 
   Args:
-    image: A three channel RGB image represented as numpy ndarray.
+    image: A three channel BGR image represented as numpy ndarray.
     detection: A detection proto message to be annotated on the image.
     keypoint_drawing_spec: A DrawingSpec object that specifies the keypoints'
       drawing settings such as color, line thickness, and circle radius.
@@ -83,13 +82,13 @@ def draw_detection(
 
   Raises:
     ValueError: If one of the followings:
-      a) If the input image is not three channel RGB.
+      a) If the input image is not three channel BGR.
       b) If the location data is not relative data.
   """
   if not detection.location_data:
     return
-  if image.shape[2] != _RGB_CHANNELS:
-    raise ValueError('Input image must contain three channel rgb data.')
+  if image.shape[2] != _BGR_CHANNELS:
+    raise ValueError('Input image must contain three channel bgr data.')
   image_rows, image_cols, _ = image.shape
 
   location = detection.location_data
@@ -130,30 +129,29 @@ def draw_landmarks(
   """Draws the landmarks and the connections on the image.
 
   Args:
-    image: A three channel RGB image represented as numpy ndarray.
+    image: A three channel BGR image represented as numpy ndarray.
     landmark_list: A normalized landmark list proto message to be annotated on
       the image.
     connections: A list of landmark index tuples that specifies how landmarks to
       be connected in the drawing.
-    landmark_drawing_spec: Either a DrawingSpec object or a mapping from
-      hand landmarks to the DrawingSpecs that specifies the landmarks' drawing
-      settings such as color, line thickness, and circle radius.
-      If this argument is explicitly set to None, no landmarks will be drawn.
-    connection_drawing_spec: Either a DrawingSpec object or a mapping from
-      hand connections to the DrawingSpecs that specifies the
-      connections' drawing settings such as color and line thickness.
-      If this argument is explicitly set to None, no landmark connections will
-      be drawn.
+    landmark_drawing_spec: Either a DrawingSpec object or a mapping from hand
+      landmarks to the DrawingSpecs that specifies the landmarks' drawing
+      settings such as color, line thickness, and circle radius. If this
+      argument is explicitly set to None, no landmarks will be drawn.
+    connection_drawing_spec: Either a DrawingSpec object or a mapping from hand
+      connections to the DrawingSpecs that specifies the connections' drawing
+      settings such as color and line thickness. If this argument is explicitly
+      set to None, no landmark connections will be drawn.
 
   Raises:
     ValueError: If one of the followings:
-      a) If the input image is not three channel RGB.
+      a) If the input image is not three channel BGR.
       b) If any connetions contain invalid landmark index.
   """
   if not landmark_list:
     return
-  if image.shape[2] != _RGB_CHANNELS:
-    raise ValueError('Input image must contain three channel rgb data.')
+  if image.shape[2] != _BGR_CHANNELS:
+    raise ValueError('Input image must contain three channel bgr data.')
   image_rows, image_cols, _ = image.shape
   idx_to_coordinates = {}
   for idx, landmark in enumerate(landmark_list.landmark):
@@ -197,36 +195,35 @@ def draw_landmarks(
                  drawing_spec.color, drawing_spec.thickness)
 
 
-def draw_axis(
-    image: np.ndarray,
-    rotation: np.ndarray,
-    translation: np.ndarray,
-    focal_length: Tuple[float, float] = (1.0, 1.0),
-    principal_point: Tuple[float, float] = (0.0, 0.0),
-    axis_length: float = 0.1,
-    axis_drawing_spec: DrawingSpec = DrawingSpec()):
+def draw_axis(image: np.ndarray,
+              rotation: np.ndarray,
+              translation: np.ndarray,
+              focal_length: Tuple[float, float] = (1.0, 1.0),
+              principal_point: Tuple[float, float] = (0.0, 0.0),
+              axis_length: float = 0.1,
+              axis_drawing_spec: DrawingSpec = DrawingSpec()):
   """Draws the 3D axis on the image.
 
   Args:
-    image: A three channel RGB image represented as numpy ndarray.
+    image: A three channel BGR image represented as numpy ndarray.
     rotation: Rotation matrix from object to camera coordinate frame.
     translation: Translation vector from object to camera coordinate frame.
     focal_length: camera focal length along x and y directions.
     principal_point: camera principal point in x and y.
     axis_length: length of the axis in the drawing.
-    axis_drawing_spec: A DrawingSpec object that specifies the xyz axis
-      drawing settings such as line thickness.
+    axis_drawing_spec: A DrawingSpec object that specifies the xyz axis drawing
+      settings such as line thickness.
 
   Raises:
     ValueError: If one of the followings:
-      a) If the input image is not three channel RGB.
+      a) If the input image is not three channel BGR.
   """
-  if image.shape[2] != _RGB_CHANNELS:
-    raise ValueError('Input image must contain three channel rgb data.')
+  if image.shape[2] != _BGR_CHANNELS:
+    raise ValueError('Input image must contain three channel bgr data.')
   image_rows, image_cols, _ = image.shape
   # Create axis points in camera coordinate frame.
   axis_world = np.float32([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
-  axis_cam = np.matmul(rotation, axis_length*axis_world.T).T + translation
+  axis_cam = np.matmul(rotation, axis_length * axis_world.T).T + translation
   x = axis_cam[..., 0]
   y = axis_cam[..., 1]
   z = axis_cam[..., 2]
@@ -274,8 +271,9 @@ def plot_landmarks(landmark_list: landmark_pb2.NormalizedLandmarkList,
       connections' drawing settings such as color and line thickness.
     elevation: The elevation from which to view the plot.
     azimuth: the azimuth angle to rotate the plot.
+
   Raises:
-    ValueError: If any connetions contain invalid landmark index.
+    ValueError: If any connection contains an invalid landmark index.
   """
   if not landmark_list:
     return

@@ -15,6 +15,7 @@
 #include "mediapipe/util/sequence/media_sequence.h"
 
 #include <algorithm>
+#include <string>
 
 #include "mediapipe/framework/formats/location.h"
 #include "mediapipe/framework/port/gmock.h"
@@ -22,6 +23,7 @@
 #include "mediapipe/framework/port/opencv_imgcodecs_inc.h"
 #include "mediapipe/framework/port/status_matchers.h"
 #include "tensorflow/core/example/example.pb.h"
+#include "tensorflow/core/example/feature.pb.h"
 
 namespace mediapipe {
 namespace mediasequence {
@@ -32,6 +34,14 @@ TEST(MediaSequenceTest, RoundTripDatasetName) {
   std::string name = "test";
   SetExampleDatasetName(name, &sequence);
   ASSERT_EQ(GetExampleDatasetName(sequence), name);
+}
+
+TEST(MediaSequenceTest, RoundTripDatasetFlagString) {
+  tensorflow::SequenceExample sequence;
+  std::vector<std::string> flags = {"test", "overall", "special"};
+  SetExampleDatasetFlagString(flags, &sequence);
+  ASSERT_THAT(GetExampleDatasetFlagString(sequence),
+              testing::ElementsAreArray(flags));
 }
 
 TEST(MediaSequenceTest, RoundTripMediaId) {
@@ -399,12 +409,20 @@ TEST(MediaSequenceTest, RoundTripBBoxEmbedding) {
   tensorflow::SequenceExample sequence;
   std::vector<std::vector<std::string>> embeddings = {
       {"embedding00", "embedding01"}, {"embedding10", "embedding11"}};
+  std::vector<std::vector<float>> confidences = {{0.7, 0.8}, {0.9, 0.95}};
   for (int i = 0; i < embeddings.size(); ++i) {
     AddBBoxEmbeddingEncoded("GT_KEY", embeddings[i], &sequence);
     ASSERT_EQ(GetBBoxEmbeddingEncodedSize("GT_KEY", sequence), i + 1);
     const auto& sequence_embeddings =
         GetBBoxEmbeddingEncodedAt("GT_KEY", sequence, i);
     EXPECT_THAT(sequence_embeddings, testing::ElementsAreArray(embeddings[i]));
+
+    AddBBoxEmbeddingConfidence("GT_KEY", confidences[i], &sequence);
+    ASSERT_EQ(GetBBoxEmbeddingConfidenceSize("GT_KEY", sequence), i + 1);
+    const auto& sequence_confidences =
+        GetBBoxEmbeddingConfidenceAt("GT_KEY", sequence, i);
+    EXPECT_THAT(sequence_confidences,
+                testing::ElementsAreArray(confidences[i]));
   }
 }
 
@@ -616,6 +634,39 @@ TEST(MediaSequenceTest, RoundTripFeatureTimestamp) {
   ASSERT_EQ(GetFeatureTimestampSize(feature_key, sequence), 0);
 }
 
+TEST(MediaSequenceTest, RoundTripContextFeatureFloats) {
+  tensorflow::SequenceExample sequence;
+  std::string feature_key = "TEST";
+  std::vector<float> vf = {0., 1., 2., 4.};
+  SetContextFeatureFloats(feature_key, vf, &sequence);
+  ASSERT_EQ(GetContextFeatureFloats(feature_key, sequence).size(), vf.size());
+  ASSERT_EQ(GetContextFeatureFloats(feature_key, sequence)[3], vf[3]);
+  ClearContextFeatureFloats(feature_key, &sequence);
+  ASSERT_FALSE(HasFeatureFloats(feature_key, sequence));
+}
+
+TEST(MediaSequenceTest, RoundTripContextFeatureBytes) {
+  tensorflow::SequenceExample sequence;
+  std::string feature_key = "TEST";
+  std::vector<std::string> vs = {"0", "1", "2", "4"};
+  SetContextFeatureBytes(feature_key, vs, &sequence);
+  ASSERT_EQ(GetContextFeatureBytes(feature_key, sequence).size(), vs.size());
+  ASSERT_EQ(GetContextFeatureBytes(feature_key, sequence)[3], vs[3]);
+  ClearContextFeatureBytes(feature_key, &sequence);
+  ASSERT_FALSE(HasFeatureBytes(feature_key, sequence));
+}
+
+TEST(MediaSequenceTest, RoundTripContextFeatureInts) {
+  tensorflow::SequenceExample sequence;
+  std::string feature_key = "TEST";
+  std::vector<int64> vi = {0, 1, 2, 4};
+  SetContextFeatureInts(feature_key, vi, &sequence);
+  ASSERT_EQ(GetContextFeatureInts(feature_key, sequence).size(), vi.size());
+  ASSERT_EQ(GetContextFeatureInts(feature_key, sequence)[3], vi[3]);
+  ClearContextFeatureInts(feature_key, &sequence);
+  ASSERT_FALSE(HasFeatureInts(feature_key, sequence));
+}
+
 TEST(MediaSequenceTest, RoundTripOpticalFlowEncoded) {
   tensorflow::SequenceExample sequence;
   std::vector<std::string> flow = {"test", "again"};
@@ -752,7 +803,7 @@ TEST(MediaSequenceTest, ReconcileMetadataImages) {
   tensorflow::SequenceExample sequence;
   cv::Mat image(2, 3, CV_8UC3, cv::Scalar(0, 0, 255));
   std::vector<uchar> bytes;
-  ASSERT_TRUE(cv::imencode(".jpg", image, bytes, {80}));
+  ASSERT_TRUE(cv::imencode(".jpg", image, bytes, {}));
   std::string encoded_image(bytes.begin(), bytes.end());
   AddImageEncoded(encoded_image, &sequence);
   AddImageEncoded(encoded_image, &sequence);
@@ -793,7 +844,7 @@ TEST(MediaSequenceTest, ReconcileMetadataFlowEncoded) {
   tensorflow::SequenceExample sequence;
   cv::Mat image(2, 3, CV_8UC3, cv::Scalar(0, 0, 255));
   std::vector<uchar> bytes;
-  ASSERT_TRUE(cv::imencode(".jpg", image, bytes, {80}));
+  ASSERT_TRUE(cv::imencode(".jpg", image, bytes, {}));
   std::string encoded_flow(bytes.begin(), bytes.end());
 
   AddForwardFlowEncoded(encoded_flow, &sequence);
@@ -817,6 +868,8 @@ TEST(MediaSequenceTest, ReconcileMetadataFloats) {
   AddFeatureFloats(feature_name, vf, &sequence);
   AddFeatureTimestamp(feature_name, 1000000, &sequence);
   AddFeatureTimestamp(feature_name, 2000000, &sequence);
+  sequence.mutable_feature_lists()->mutable_feature_list()->insert(
+      {"EMPTY/feature/floats", tensorflow::FeatureList()});
 
   MP_ASSERT_OK(ReconcileMetadata(true, false, &sequence));
   ASSERT_EQ(GetFeatureDimensions(feature_name, sequence).size(), 1);

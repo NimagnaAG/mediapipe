@@ -81,11 +81,11 @@
 //     MP_RETURN_IF_ERROR(foo.Method(args...));
 //     return absl::OkStatus();
 //   }
-#define MP_RETURN_IF_ERROR(expr)                                          \
-  STATUS_MACROS_IMPL_ELSE_BLOCKER_                                        \
-  if (mediapipe::status_macro_internal::StatusAdaptorForMacros            \
-          status_macro_internal_adaptor = {(expr), __FILE__, __LINE__}) { \
-  } else /* NOLINT */                                                     \
+#define MP_RETURN_IF_ERROR(expr)                                     \
+  STATUS_MACROS_IMPL_ELSE_BLOCKER_                                   \
+  if (mediapipe::status_macro_internal::StatusAdaptorForMacros       \
+          status_macro_internal_adaptor = {(expr), MEDIAPIPE_LOC}) { \
+  } else /* NOLINT */                                                \
     return status_macro_internal_adaptor.Consume()
 
 // Executes an expression `rexpr` that returns a `absl::StatusOr<T>`. On
@@ -150,21 +150,28 @@
 #define STATUS_MACROS_IMPL_GET_VARIADIC_(args) \
   STATUS_MACROS_IMPL_GET_VARIADIC_HELPER_ args
 
-#define STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_2_(lhs, rexpr) \
-  STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_3_(lhs, rexpr, std::move(_))
+#define STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_2_(lhs, rexpr)                  \
+  STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_(                                     \
+      STATUS_MACROS_IMPL_CONCAT_(_status_or_value, __LINE__), lhs, rexpr,   \
+      return mediapipe::StatusBuilder(                                      \
+          std::move(STATUS_MACROS_IMPL_CONCAT_(_status_or_value, __LINE__)) \
+              .status(),                                                    \
+          MEDIAPIPE_LOC))
 #define STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_3_(lhs, rexpr, error_expression) \
   STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_(                                      \
       STATUS_MACROS_IMPL_CONCAT_(_status_or_value, __LINE__), lhs, rexpr,    \
-      error_expression)
-#define STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_(statusor, lhs, rexpr,      \
-                                             error_expression)          \
-  auto statusor = (rexpr);                                              \
-  if (ABSL_PREDICT_FALSE(!statusor.ok())) {                             \
-    mediapipe::StatusBuilder _(std::move(statusor).status(), __FILE__,  \
-                               __LINE__);                               \
-    (void)_; /* error_expression is allowed to not use this variable */ \
-    return (error_expression);                                          \
-  }                                                                     \
+      mediapipe::StatusBuilder _(                                            \
+          std::move(STATUS_MACROS_IMPL_CONCAT_(_status_or_value, __LINE__))  \
+              .status(),                                                     \
+          MEDIAPIPE_LOC);                                                    \
+      (void)_; /* error_expression is allowed to not use this variable */    \
+      return (error_expression))
+#define STATUS_MACROS_IMPL_ASSIGN_OR_RETURN_(statusor, lhs, rexpr, \
+                                             error_expression)     \
+  auto statusor = (rexpr);                                         \
+  if (ABSL_PREDICT_FALSE(!statusor.ok())) {                        \
+    error_expression;                                              \
+  }                                                                \
   lhs = std::move(statusor).value()
 
 // Internal helper for concatenating macro values.
@@ -194,18 +201,17 @@ namespace status_macro_internal {
 // that declares a variable.
 class StatusAdaptorForMacros {
  public:
-  StatusAdaptorForMacros(const absl::Status& status, const char* file, int line)
-      : builder_(status, file, line) {}
+  StatusAdaptorForMacros(const absl::Status& status, source_location location)
+      : builder_(status, location) {}
 
-  StatusAdaptorForMacros(absl::Status&& status, const char* file, int line)
-      : builder_(std::move(status), file, line) {}
+  StatusAdaptorForMacros(absl::Status&& status, source_location location)
+      : builder_(std::move(status), location) {}
 
-  StatusAdaptorForMacros(const StatusBuilder& builder, const char* /* file */,
-                         int /* line */)
+  StatusAdaptorForMacros(const StatusBuilder& builder,
+                         source_location /*location*/)
       : builder_(builder) {}
 
-  StatusAdaptorForMacros(StatusBuilder&& builder, const char* /* file */,
-                         int /* line */)
+  StatusAdaptorForMacros(StatusBuilder&& builder, source_location /*location*/)
       : builder_(std::move(builder)) {}
 
   StatusAdaptorForMacros(const StatusAdaptorForMacros&) = delete;

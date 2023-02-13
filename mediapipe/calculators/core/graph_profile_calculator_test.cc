@@ -23,7 +23,6 @@
 #include "mediapipe/framework/calculator_framework.h"
 #include "mediapipe/framework/calculator_profile.pb.h"
 #include "mediapipe/framework/deps/clock.h"
-#include "mediapipe/framework/deps/message_matchers.h"
 #include "mediapipe/framework/port/gmock.h"
 #include "mediapipe/framework/port/gtest.h"
 #include "mediapipe/framework/port/integral_types.h"
@@ -203,6 +202,8 @@ TEST_F(GraphProfileCalculatorTest, GraphProfile) {
           }
         })pb");
 
+  ASSERT_EQ(output_packets.size(), 2);
+  EXPECT_TRUE(output_packets[0].Get<GraphProfile>().has_config());
   EXPECT_THAT(output_packets[1].Get<GraphProfile>(),
               mediapipe::EqualsProto(expected_profile));
 }

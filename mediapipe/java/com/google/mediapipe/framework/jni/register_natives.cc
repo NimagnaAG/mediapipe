@@ -130,13 +130,19 @@ void RegisterGraphNatives(JNIEnv *env) {
   AddJNINativeMethod(&graph_methods, graph, "nativeCloseAllPacketSources",
                      "(J)V",
                      (void *)&GRAPH_METHOD(nativeCloseAllPacketSources));
+  AddJNINativeMethod(&graph_methods, graph, "nativeWaitUntilGraphIdle", "(J)V",
+                     (void *)&GRAPH_METHOD(nativeWaitUntilGraphIdle));
   AddJNINativeMethod(&graph_methods, graph, "nativeWaitUntilGraphDone", "(J)V",
                      (void *)&GRAPH_METHOD(nativeWaitUntilGraphDone));
   AddJNINativeMethod(&graph_methods, graph, "nativeReleaseGraph", "(J)V",
                      (void *)&GRAPH_METHOD(nativeReleaseGraph));
   AddJNINativeMethod(&graph_methods, graph, "nativeGetProfiler", "(J)J",
                      (void *)&GRAPH_METHOD(nativeGetProfiler));
+  AddJNINativeMethod(&graph_methods, graph, "nativeAddPacketToInputStream",
+                     "(JLjava/lang/String;JJ)V",
+                     (void *)&GRAPH_METHOD(nativeAddPacketToInputStream));
   RegisterNativesVector(env, graph_class, graph_methods);
+  env->DeleteLocalRef(graph_class);
 }
 
 void RegisterGraphProfilerNatives(JNIEnv *env) {
@@ -151,6 +157,7 @@ void RegisterGraphProfilerNatives(JNIEnv *env) {
       &graph_profiler_methods, graph_profiler, "nativeGetCalculatorProfiles",
       "(J)[[B", (void *)&GRAPH_PROFILER_METHOD(nativeGetCalculatorProfiles));
   RegisterNativesVector(env, graph_profiler_class, graph_profiler_methods);
+  env->DeleteLocalRef(graph_profiler_class);
 }
 
 void RegisterAndroidAssetUtilNatives(JNIEnv *env) {
@@ -171,6 +178,7 @@ void RegisterAndroidAssetUtilNatives(JNIEnv *env) {
       (void *)&ANDROID_ASSET_UTIL_METHOD(nativeInitializeAssetManager));
   RegisterNativesVector(env, android_asset_util_class,
                         android_asset_util_methods);
+  env->DeleteLocalRef(android_asset_util_class);
 #endif
 }
 
@@ -191,6 +199,7 @@ void RegisterAndroidPacketCreatorNatives(JNIEnv *env) {
       (void *)&ANDROID_PACKET_CREATOR_METHOD(nativeCreateRgbImageFrame));
   RegisterNativesVector(env, android_packet_creator_class,
                         android_packet_creator_methods);
+  env->DeleteLocalRef(android_packet_creator_class);
 #endif
 }
 
@@ -225,6 +234,14 @@ void RegisterPacketCreatorNatives(JNIEnv *env) {
   AddJNINativeMethod(&packet_creator_methods, packet_creator,
                      "nativeCreateString", "(JLjava/lang/String;)J",
                      (void *)&PACKET_CREATOR_METHOD(nativeCreateString));
+  AddJNINativeMethod(
+      &packet_creator_methods, packet_creator,
+      "nativeCreateStringFromByteArray", "(J[B)J",
+      (void *)&PACKET_CREATOR_METHOD(nativeCreateStringFromByteArray));
+  AddJNINativeMethod(
+      &packet_creator_methods, packet_creator, "nativeCreateRgbImageFromRgba",
+      "(JLjava/nio/ByteBuffer;II)J",
+      (void *)&PACKET_CREATOR_METHOD(nativeCreateRgbImageFromRgba));
   std::string serialized_message_name = class_registry.GetClassName(
       mediapipe::android::ClassRegistry::kProtoUtilSerializedMessageClassName);
   AddJNINativeMethod(&packet_creator_methods, packet_creator,
@@ -232,6 +249,7 @@ void RegisterPacketCreatorNatives(JNIEnv *env) {
                      "(JL" + serialized_message_name + ";)J",
                      (void *)&PACKET_CREATOR_METHOD(nativeCreateProto));
   RegisterNativesVector(env, packet_creator_class, packet_creator_methods);
+  env->DeleteLocalRef(packet_creator_class);
 }
 
 void RegisterPacketGetterNatives(JNIEnv *env) {
@@ -259,7 +277,14 @@ void RegisterPacketGetterNatives(JNIEnv *env) {
   AddJNINativeMethod(&packet_getter_methods, packet_getter,
                      "nativeGetFloat32Vector", "(J)[F",
                      (void *)&PACKET_GETTER_METHOD(nativeGetFloat32Vector));
+  AddJNINativeMethod(&packet_getter_methods, packet_getter,
+                     "nativeGetProtoVector", "(J)[[B",
+                     (void *)&PACKET_GETTER_METHOD(nativeGetProtoVector));
+  AddJNINativeMethod(&packet_getter_methods, packet_getter,
+                     "nativeGetRgbaFromRgb", "(JLjava/nio/ByteBuffer;)Z",
+                     (void *)&PACKET_GETTER_METHOD(nativeGetRgbaFromRgb));
   RegisterNativesVector(env, packet_getter_class, packet_getter_methods);
+  env->DeleteLocalRef(packet_getter_class);
 }
 
 void RegisterPacketNatives(JNIEnv *env) {
@@ -278,6 +303,7 @@ void RegisterPacketNatives(JNIEnv *env) {
   AddJNINativeMethod(&packet_methods, packet, "nativeIsEmpty", "(J)Z",
                      (void *)&PACKET_METHOD(nativeIsEmpty));
   RegisterNativesVector(env, packet_class, packet_methods);
+  env->DeleteLocalRef(packet_class);
 }
 
 void RegisterCompatNatives(JNIEnv *env) {
@@ -293,6 +319,7 @@ void RegisterCompatNatives(JNIEnv *env) {
                      "(I)J",
                      (void *)&COMPAT_METHOD(getCurrentNativeEGLSurface));
   RegisterNativesVector(env, compat_class, compat_methods);
+  env->DeleteLocalRef(compat_class);
 }
 
 }  // namespace

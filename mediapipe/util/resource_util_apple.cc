@@ -49,12 +49,7 @@ absl::Status DefaultGetResourceContents(const std::string& path,
     LOG(WARNING) << "Setting \"read_as_binary\" to false is a no-op on ios.";
   }
   ASSIGN_OR_RETURN(std::string full_path, PathToResourceAsFile(path));
-
-  std::ifstream input_file(full_path);
-  std::stringstream buffer;
-  buffer << input_file.rdbuf();
-  buffer.str().swap(*output);
-  return absl::OkStatus();
+  return file::GetContents(full_path, output, read_as_binary);
 }
 }  // namespace internal
 
@@ -76,7 +71,8 @@ absl::StatusOr<std::string> PathToResourceAsFile(const std::string& path) {
   // If that fails, assume it was a relative path, and try just the base name.
   {
     const size_t last_slash_idx = path.find_last_of("\\/");
-    CHECK_NE(last_slash_idx, std::string::npos);  // Make sure it's a path.
+    RET_CHECK(last_slash_idx != std::string::npos)
+        << path << " doesn't have a slash in it";  // Make sure it's a path.
     auto base_name = path.substr(last_slash_idx + 1);
     auto status_or_path = PathToResourceAsFileInternal(base_name);
     if (status_or_path.ok()) {

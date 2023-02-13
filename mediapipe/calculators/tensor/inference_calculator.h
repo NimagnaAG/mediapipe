@@ -20,17 +20,13 @@
 #include <string>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "mediapipe/calculators/tensor/inference_calculator.pb.h"
 #include "mediapipe/framework/api2/node.h"
 #include "mediapipe/framework/calculator_framework.h"
 #include "mediapipe/framework/formats/tensor.h"
-#include "mediapipe/framework/port/ret_check.h"
 #include "mediapipe/util/tflite/tflite_model_loader.h"
-#include "tensorflow/lite/error_reporter.h"
-#include "tensorflow/lite/interpreter.h"
-#include "tensorflow/lite/kernels/register.h"
-#include "tensorflow/lite/model.h"
+#include "tensorflow/lite/core/api/op_resolver.h"
+#include "tensorflow/lite/core/shims/cc/kernels/register.h"
 
 namespace mediapipe {
 namespace api2 {
@@ -55,8 +51,11 @@ namespace api2 {
 //  TENSORS - Vector of Tensors
 //
 // Input side packet:
+//  DEPRECATED: Prefer to use the "OP_RESOLVER" input side packet instead.
 //  CUSTOM_OP_RESOLVER (optional) - Use a custom op resolver,
 //                                  instead of the builtin one.
+//  OP_RESOLVER (optional) - Use to provide tflite op resolver
+//                           (tflite::OpResolver)
 //  MODEL (optional) - Use to specify TfLite model
 //                     (std::unique_ptr<tflite::FlatBufferModel,
 //                       std::function<void(tflite::FlatBufferModel*)>>)
@@ -95,21 +94,31 @@ namespace api2 {
 class InferenceCalculator : public NodeIntf {
  public:
   static constexpr Input<std::vector<Tensor>> kInTensors{"TENSORS"};
-  static constexpr SideInput<tflite::ops::builtin::BuiltinOpResolver>::Optional
-      kSideInCustomOpResolver{"CUSTOM_OP_RESOLVER"};
+  // Deprecated. Prefers to use "OP_RESOLVER" input side packet instead.
+  // TODO: Removes the "CUSTOM_OP_RESOLVER" side input after the
+  // migration.
+  static constexpr SideInput<tflite_shims::ops::builtin::BuiltinOpResolver>::
+      Optional kSideInCustomOpResolver{"CUSTOM_OP_RESOLVER"};
+  static constexpr SideInput<tflite::OpResolver>::Optional kSideInOpResolver{
+      "OP_RESOLVER"};
   static constexpr SideInput<TfLiteModelPtr>::Optional kSideInModel{"MODEL"};
   static constexpr Output<std::vector<Tensor>> kOutTensors{"TENSORS"};
   static constexpr SideInput<
       mediapipe::InferenceCalculatorOptions::Delegate>::Optional kDelegate{
       "DELEGATE"};
-  MEDIAPIPE_NODE_CONTRACT(kInTensors, kSideInCustomOpResolver, kSideInModel,
-                          kOutTensors, kDelegate);
+  MEDIAPIPE_NODE_CONTRACT(kInTensors, kSideInCustomOpResolver,
+                          kSideInOpResolver, kSideInModel, kOutTensors,
+                          kDelegate);
 
  protected:
   using TfLiteDelegatePtr =
-      std::unique_ptr<TfLiteDelegate, std::function<void(TfLiteDelegate*)>>;
+      std::unique_ptr<TfLiteOpaqueDelegate,
+                      std::function<void(TfLiteOpaqueDelegate*)>>;
 
-  absl::StatusOr<Packet<TfLiteModelPtr>> GetModelAsPacket(
+  static absl::StatusOr<Packet<TfLiteModelPtr>> GetModelAsPacket(
+      CalculatorContext* cc);
+
+  static absl::StatusOr<Packet<tflite::OpResolver>> GetOpResolverAsPacket(
       CalculatorContext* cc);
 };
 
@@ -121,12 +130,20 @@ struct InferenceCalculatorGl : public InferenceCalculator {
   static constexpr char kCalculatorName[] = "InferenceCalculatorGl";
 };
 
+struct InferenceCalculatorGlAdvanced : public InferenceCalculator {
+  static constexpr char kCalculatorName[] = "InferenceCalculatorGlAdvanced";
+};
+
 struct InferenceCalculatorMetal : public InferenceCalculator {
   static constexpr char kCalculatorName[] = "InferenceCalculatorMetal";
 };
 
 struct InferenceCalculatorCpu : public InferenceCalculator {
   static constexpr char kCalculatorName[] = "InferenceCalculatorCpu";
+};
+
+struct InferenceCalculatorXnnpack : public InferenceCalculator {
+  static constexpr char kCalculatorName[] = "InferenceCalculatorXnnpack";
 };
 
 }  // namespace api2

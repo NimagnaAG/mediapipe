@@ -13,13 +13,17 @@
 # limitations under the License.
 
 load("//mediapipe/framework/tool:mediapipe_graph.bzl", "mediapipe_simple_subgraph")
+load(
+    "//mediapipe/framework/tool:mediapipe_files.bzl",
+    "mediapipe_files",
+)
 
 # TODO: revert to private.
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-exports_files([
+mediapipe_files(srcs = [
     "hand_recrop.tflite",
 ])
 
@@ -31,7 +35,7 @@ mediapipe_simple_subgraph(
         ":face_detection_front_detections_to_roi",
         ":face_landmarks_from_pose_to_recrop_roi",
         ":face_tracking",
-        "//mediapipe/calculators/core:split_landmarks_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
         "//mediapipe/calculators/image:image_properties_calculator",
         "//mediapipe/modules/face_detection:face_detection_short_range_by_roi_gpu",
         "//mediapipe/modules/face_landmark:face_landmark_gpu",
@@ -46,7 +50,7 @@ mediapipe_simple_subgraph(
         ":face_detection_front_detections_to_roi",
         ":face_landmarks_from_pose_to_recrop_roi",
         ":face_tracking",
-        "//mediapipe/calculators/core:split_landmarks_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
         "//mediapipe/calculators/image:image_properties_calculator",
         "//mediapipe/modules/face_detection:face_detection_short_range_by_roi_cpu",
         "//mediapipe/modules/face_landmark:face_landmark_cpu",
@@ -131,7 +135,6 @@ mediapipe_simple_subgraph(
     graph = "hand_landmarks_to_roi.pbtxt",
     register_as = "HandLandmarksToRoi",
     deps = [
-        "//mediapipe/calculators/core:split_landmarks_calculator",
         "//mediapipe/calculators/util:rect_transformation_calculator",
         "//mediapipe/modules/hand_landmark/calculators:hand_landmarks_to_rect_calculator",
     ],
@@ -191,7 +194,7 @@ mediapipe_simple_subgraph(
     deps = [
         "//mediapipe/calculators/core:constant_side_packet_calculator",
         "//mediapipe/calculators/core:side_packet_to_stream_calculator",
-        "//mediapipe/calculators/core:split_landmarks_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
         "//mediapipe/calculators/util:set_landmark_visibility_calculator",
     ],
 )
@@ -202,7 +205,7 @@ mediapipe_simple_subgraph(
     register_as = "HandLandmarksLeftAndRightGpu",
     deps = [
         ":hand_landmarks_from_pose_gpu",
-        "//mediapipe/calculators/core:split_landmarks_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
     ],
 )
 
@@ -212,7 +215,7 @@ mediapipe_simple_subgraph(
     register_as = "HandLandmarksLeftAndRightCpu",
     deps = [
         ":hand_landmarks_from_pose_cpu",
-        "//mediapipe/calculators/core:split_landmarks_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
     ],
 )
 
@@ -232,7 +235,7 @@ mediapipe_simple_subgraph(
     graph = "hand_visibility_from_hand_landmarks_from_pose.pbtxt",
     register_as = "HandVisibilityFromHandLandmarksFromPose",
     deps = [
-        "//mediapipe/calculators/core:split_landmarks_calculator",
+        "//mediapipe/calculators/core:split_proto_list_calculator",
         "//mediapipe/calculators/util:landmark_visibility_calculator",
         "//mediapipe/calculators/util:thresholding_calculator",
     ],

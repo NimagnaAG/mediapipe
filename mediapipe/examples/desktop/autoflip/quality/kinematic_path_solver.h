@@ -71,6 +71,8 @@ class KinematicPathSolver {
   // Provides the change in position from last state.
   absl::Status GetDeltaState(float* delta_position);
 
+  bool IsInitialized() { return initialized_; }
+
  private:
   // Tuning options.
   KinematicOptions options_;
@@ -83,7 +85,7 @@ class KinematicPathSolver {
   double current_position_px_;
   double prior_position_px_;
   double current_velocity_deg_per_s_;
-  uint64 current_time_;
+  uint64 current_time_ = 0;
   // History of observations (second) and their time (first).
   std::deque<std::pair<uint64, int>> raw_positions_at_time_;
   // Current target position.

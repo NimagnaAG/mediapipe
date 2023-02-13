@@ -21,6 +21,8 @@
 #include <typeindex>
 
 // TODO: Move protos in another CL after the C++ code migration.
+#include "absl/container/flat_hash_map.h"
+#include "absl/strings/string_view.h"
 #include "mediapipe/framework/calculator.pb.h"
 #include "mediapipe/framework/graph_service.h"
 #include "mediapipe/framework/mediapipe_options.pb.h"
@@ -57,7 +59,7 @@ class CalculatorContract {
   const CalculatorOptions& Options() const { return node_config_->options(); }
 
   // Returns the name given to this node.
-  const std::string& GetNodeName() { return node_name_; }
+  const std::string& GetNodeName() const { return node_name_; }
 
   // Returns the options given to this calculator.  Template argument T must
   // be the type of the protobuf extension message or the protobuf::Any
@@ -95,8 +97,8 @@ class CalculatorContract {
     input_stream_handler_options_ = options;
   }
 
-  // Returns the name of this Nodes's InputStreamHandler, or empty std::string
-  // if none is set.
+  // Returns the name of this Nodes's InputStreamHandler, or empty string if
+  // none is set.
   std::string GetInputStreamHandler() const { return input_stream_handler_; }
 
   // Returns the MediaPipeOptions of this Node's InputStreamHandler, or empty
@@ -147,7 +149,7 @@ class CalculatorContract {
     bool IsOptional() const { return optional_; }
 
    private:
-    GraphServiceBase service_;
+    const GraphServiceBase& service_;
     bool optional_ = false;
   };
 
@@ -156,9 +158,12 @@ class CalculatorContract {
     return it->second;
   }
 
-  const std::map<std::string, GraphServiceRequest>& ServiceRequests() const {
-    return service_requests_;
-  }
+  // A GraphService's key is always a static constant, so we can use string_view
+  // as the key type without lifetime issues.
+  using ServiceReqMap =
+      absl::flat_hash_map<absl::string_view, GraphServiceRequest>;
+
+  const ServiceReqMap& ServiceRequests() const { return service_requests_; }
 
  private:
   template <class T>
@@ -180,7 +185,7 @@ class CalculatorContract {
   std::string input_stream_handler_;
   MediaPipeOptions input_stream_handler_options_;
   std::string node_name_;
-  std::map<std::string, GraphServiceRequest> service_requests_;
+  ServiceReqMap service_requests_;
   bool process_timestamps_ = false;
   TimestampDiff timestamp_offset_ = TimestampDiff::Unset();
 

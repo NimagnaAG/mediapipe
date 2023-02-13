@@ -15,6 +15,9 @@
 #ifndef MEDIAPIPE_GPU_GL_CALCULATOR_HELPER_H_
 #define MEDIAPIPE_GPU_GL_CALCULATOR_HELPER_H_
 
+#include <memory>
+
+#include "absl/base/attributes.h"
 #include "absl/memory/memory.h"
 #include "mediapipe/framework/calculator_context.h"
 #include "mediapipe/framework/calculator_contract.h"
@@ -29,13 +32,8 @@
 #include "mediapipe/gpu/gpu_buffer.h"
 #include "mediapipe/gpu/graph_support.h"
 
-#ifdef __APPLE__
-#include <CoreVideo/CoreVideo.h>
-#endif  // __APPLE__
-
 namespace mediapipe {
 
-class GlCalculatorHelperImpl;
 class GlTexture;
 class GpuResources;
 struct GpuSharedData;
@@ -64,6 +62,7 @@ class GlCalculatorHelper {
   // Can be used to initialize the helper outside of a calculator. Useful for
   // testing.
   void InitializeForTest(GpuResources* gpu_resources);
+  ABSL_DEPRECATED("Use InitializeForTest(GpuResources)")
   void InitializeForTest(GpuSharedData* gpu_shared);
 
   // This method can be called from GetContract to set up the needed GPU
@@ -72,6 +71,7 @@ class GlCalculatorHelper {
 
   // This method can be called from FillExpectations to set the correct types
   // for the shared GL input side packet(s).
+  ABSL_DEPRECATED("Use UpdateContract")
   static absl::Status SetupInputSidePackets(PacketTypeSet* input_side_packets);
 
   // Execute the provided function within the helper's GL context. On some
@@ -111,24 +111,46 @@ class GlCalculatorHelper {
   // where it is supported (iOS, for now) they take advantage of memory sharing
   // between the CPU and GPU, avoiding memory copies.
 
-  // Creates a texture representing an input frame, and manages sync token.
+  // Gives access to an input frame as an OpenGL texture for reading (sampling).
+  //
+  // IMPORTANT: the returned GlTexture should be treated as a short-term view
+  // into the frame (typically for the duration of a Process call). Do not store
+  // it as a member in your calculator. If you need to keep a frame around,
+  // store the GpuBuffer instead, and call CreateSourceTexture again on each
+  // Process call.
+  //
+  // TODO: rename this; the use of "Create" makes this sound more expensive than
+  // it is.
   GlTexture CreateSourceTexture(const GpuBuffer& pixel_buffer);
-  GlTexture CreateSourceTexture(const ImageFrame& image_frame);
   GlTexture CreateSourceTexture(const mediapipe::Image& image);
 
-#ifdef __APPLE__
-  // Creates a texture from a plane of a planar buffer.
+  // Gives read access to a plane of a planar buffer.
   // The plane index is zero-based. The number of planes depends on the
   // internal format of the buffer.
+  // Note: multi-plane support is not available on all platforms.
   GlTexture CreateSourceTexture(const GpuBuffer& pixel_buffer, int plane);
-#endif
+
+  // Convenience function for converting an ImageFrame to GpuBuffer and then
+  // accessing it as a texture.
+  // This is deprecated because: 1) it encourages the use of GlTexture as a
+  // long-lived object; 2) it requires copying the ImageFrame's contents,
+  // which may not always be necessary.
+  ABSL_DEPRECATED("Use `GpuBufferWithImageFrame`.")
+  GlTexture CreateSourceTexture(const ImageFrame& image_frame);
+
+  // Creates a GpuBuffer sharing ownership of image_frame. The contents of
+  // image_frame should not be modified after calling this.
+  GpuBuffer GpuBufferWithImageFrame(std::shared_ptr<ImageFrame> image_frame);
+
+  // Creates a GpuBuffer copying the contents of image_frame.
+  GpuBuffer GpuBufferCopyingImageFrame(const ImageFrame& image_frame);
 
   // Extracts GpuBuffer dimensions without creating a texture.
   ABSL_DEPRECATED("Use width and height methods on GpuBuffer instead")
   void GetGpuBufferDimensions(const GpuBuffer& pixel_buffer, int* width,
                               int* height);
 
-  // Creates a texture representing an output frame, and manages sync token.
+  // Gives access to an OpenGL texture for writing (rendering) a new frame.
   // TODO: This should either return errors or a status.
   GlTexture CreateDestinationTexture(
       int output_width, int output_height,
@@ -141,15 +163,30 @@ class GlCalculatorHelper {
   // TODO: do we need an unbind method too?
   void BindFramebuffer(const GlTexture& dst);
 
-  GlContext& GetGlContext() const;
+  GlContext& GetGlContext() const { return *gl_context_; }
 
-  GlVersion GetGlVersion() const;
+  GlVersion GetGlVersion() const { return gl_context_->GetGlVersion(); }
 
   // Check if the calculator helper has been previously initialized.
-  bool Initialized() { return impl_ != nullptr; }
+  bool Initialized() { return gpu_resources_ != nullptr; }
 
  private:
-  std::unique_ptr<GlCalculatorHelperImpl> impl_;
+  void InitializeInternal(CalculatorContext* cc, GpuResources* gpu_resources);
+
+  absl::Status RunInGlContext(std::function<absl::Status(void)> gl_func,
+                              CalculatorContext* calculator_context);
+
+  // Makes a GpuBuffer accessible as a texture in the GL context.
+  GlTexture MapGpuBuffer(const GpuBuffer& gpu_buffer, GlTextureView view);
+
+  // Create the framebuffer for rendering.
+  void CreateFramebuffer();
+
+  std::shared_ptr<GlContext> gl_context_;
+
+  GLuint framebuffer_ = 0;
+
+  GpuResources* gpu_resources_ = nullptr;
 };
 
 // Represents an OpenGL texture, and is a 'view' into the memory pool.
@@ -163,13 +200,13 @@ class GlCalculatorHelper {
 // memory.
 class GlTexture {
  public:
-  GlTexture() {}
-  ~GlTexture() { Release(); }
+  GlTexture() : view_(std::make_shared<GlTextureView>()) {}
+  ~GlTexture() = default;
 
-  int width() const { return view_.width(); }
-  int height() const { return view_.height(); }
-  GLenum target() const { return view_.target(); }
-  GLuint name() const { return view_.name(); }
+  int width() const { return view_->width(); }
+  int height() const { return view_->height(); }
+  GLenum target() const { return view_->target(); }
+  GLuint name() const { return view_->name(); }
 
   // Returns a buffer that can be sent to another calculator.
   // & manages sync token
@@ -178,12 +215,17 @@ class GlTexture {
   std::unique_ptr<T> GetFrame() const;
 
   // Releases texture memory & manages sync token
-  void Release() { view_.Release(); }
+  void Release() { view_ = std::make_shared<GlTextureView>(); }
 
  private:
-  explicit GlTexture(GlTextureView view) : view_(std::move(view)) {}
-  friend class GlCalculatorHelperImpl;
-  GlTextureView view_;
+  explicit GlTexture(GlTextureView view, GpuBuffer gpu_buffer)
+      : gpu_buffer_(std::move(gpu_buffer)),
+        view_(std::make_shared<GlTextureView>(std::move(view))) {}
+  friend class GlCalculatorHelper;
+  // We store the GpuBuffer to support GetFrame, and to ensure that the storage
+  // outlives the view.
+  GpuBuffer gpu_buffer_;
+  std::shared_ptr<GlTextureView> view_;
 };
 
 // Returns the entry with the given tag if the collection uses tags, with the
@@ -196,12 +238,14 @@ class GlTexture {
 // it is better to keep const-safety and accept having two versions of the
 // same thing.
 template <typename T>
+ABSL_DEPRECATED("Only for legacy calculators")
 auto TagOrIndex(const T& collection, const std::string& tag, int index)
     -> decltype(collection.Tag(tag)) {
   return collection.UsesTags() ? collection.Tag(tag) : collection.Index(index);
 }
 
 template <typename T>
+ABSL_DEPRECATED("Only for legacy calculators")
 auto TagOrIndex(T* collection, const std::string& tag, int index)
     -> decltype(collection->Tag(tag)) {
   return collection->UsesTags() ? collection->Tag(tag)
@@ -209,12 +253,14 @@ auto TagOrIndex(T* collection, const std::string& tag, int index)
 }
 
 template <typename T>
+ABSL_DEPRECATED("Only for legacy calculators")
 bool HasTagOrIndex(const T& collection, const std::string& tag, int index) {
   return collection.UsesTags() ? collection.HasTag(tag)
                                : index < collection.NumEntries();
 }
 
 template <typename T>
+ABSL_DEPRECATED("Only for legacy calculators")
 bool HasTagOrIndex(T* collection, const std::string& tag, int index) {
   return collection->UsesTags() ? collection->HasTag(tag)
                                 : index < collection->NumEntries();

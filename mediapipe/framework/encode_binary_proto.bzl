@@ -123,7 +123,7 @@ _encode_binary_proto = rule(
         "_proto_compiler": attr.label(
             executable = True,
             default = Label(PROTOC),
-            cfg = "host",
+            cfg = "exec",
         ),
         "deps": attr.label_list(
             providers = [[ProtoInfo], ["proto"]],
@@ -140,9 +140,22 @@ _encode_binary_proto = rule(
 )
 
 def encode_binary_proto(name, input, message_type, deps, **kwargs):
+    if type(input) == type("string"):
+        input_label = input
+        textproto_srcs = [input]
+    elif type(input) == type(dict()):
+        # We cannot accept a select, as macros are unable to manipulate selects.
+        input_label = select(input)
+        srcs_dict = dict()
+        for k, v in input.items():
+            srcs_dict[k] = [v]
+        textproto_srcs = select(srcs_dict)
+    else:
+        fail("input should be a string or a dict, got %s" % input)
+
     _encode_binary_proto(
         name = name,
-        input = input,
+        input = input_label,
         message_type = message_type,
         deps = deps,
         **kwargs
@@ -181,7 +194,7 @@ generate_proto_descriptor_set = rule(
         "_proto_compiler": attr.label(
             executable = True,
             default = Label(PROTOC),
-            cfg = "host",
+            cfg = "exec",
         ),
         "deps": attr.label_list(
             providers = [[ProtoInfo], ["proto"]],

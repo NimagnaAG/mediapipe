@@ -174,7 +174,7 @@ TEST(CalculatorTest, CreateByName) {
 TEST(CalculatorTest, CreateByNameWhitelisted) {
   // Reset the registration namespace whitelist.
   *const_cast<absl::flat_hash_set<std::string>*>(
-      &NamespaceWhitelist::TopNamespaces()) = absl::flat_hash_set<std::string>{
+      &NamespaceAllowlist::TopNamespaces()) = absl::flat_hash_set<std::string>{
       "mediapipe::test_ns::whitelisted_ns",
       "mediapipe",
   };
@@ -183,7 +183,8 @@ TEST(CalculatorTest, CreateByNameWhitelisted) {
   CalculatorBaseRegistry::Register(
       "::mediapipe::test_ns::whitelisted_ns::DeadCalculator",
       absl::make_unique<internal::CalculatorBaseFactoryFor<
-          mediapipe::test_ns::whitelisted_ns::DeadCalculator>>);
+          mediapipe::test_ns::whitelisted_ns::DeadCalculator>>,
+      __FILE__, __LINE__);
 
   // A whitelisted calculator can be found in its own namespace.
   MP_EXPECT_OK(CalculatorBaseRegistry::CreateByNameInNamespace(  //

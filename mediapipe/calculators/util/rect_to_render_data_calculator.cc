@@ -29,6 +29,9 @@ constexpr char kNormRectsTag[] = "NORM_RECTS";
 constexpr char kRectsTag[] = "RECTS";
 constexpr char kRenderDataTag[] = "RENDER_DATA";
 
+using ::mediapipe::NormalizedRect;
+using ::mediapipe::Rect;
+
 RenderAnnotation::Rectangle* NewRect(
     const RectToRenderDataCalculatorOptions& options, RenderData* render_data) {
   auto* annotation = render_data->add_render_annotations();
@@ -36,6 +39,13 @@ RenderAnnotation::Rectangle* NewRect(
   annotation->mutable_color()->set_g(options.color().g());
   annotation->mutable_color()->set_b(options.color().b());
   annotation->set_thickness(options.thickness());
+
+  if (options.has_top_left_thickness()) {
+    CHECK(!options.oval());
+    CHECK(!options.filled());
+    annotation->mutable_rectangle()->set_top_left_thickness(
+        options.top_left_thickness());
+  }
 
   return options.oval() ? options.filled()
                               ? annotation->mutable_filled_oval()
@@ -136,6 +146,11 @@ absl::Status RectToRenderDataCalculator::Open(CalculatorContext* cc) {
   cc->SetOffset(TimestampDiff(0));
 
   options_ = cc->Options<RectToRenderDataCalculatorOptions>();
+  if (options_.has_top_left_thickness()) {
+    // Filled and oval don't support top_left_thickness.
+    RET_CHECK(!options_.filled());
+    RET_CHECK(!options_.oval());
+  }
 
   return absl::OkStatus();
 }

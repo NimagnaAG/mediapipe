@@ -55,17 +55,17 @@ Packet CreateImagePacket(mediapipe::ImageFormat::Format format,
   if (format == mediapipe::ImageFormat::SRGB ||
       format == mediapipe::ImageFormat::SRGBA ||
       format == mediapipe::ImageFormat::GRAY8) {
-    return MakePacket<Image>(std::make_shared<ImageFrame>(
-        std::move(*CreateImageFrame<uint8>(format, data, copy).release())));
+    return MakePacket<Image>(std::shared_ptr<ImageFrame>(
+        CreateImageFrame<uint8>(format, data, copy)));
   } else if (format == mediapipe::ImageFormat::GRAY16 ||
              format == mediapipe::ImageFormat::SRGB48 ||
              format == mediapipe::ImageFormat::SRGBA64) {
-    return MakePacket<Image>(std::make_shared<ImageFrame>(
-        std::move(*CreateImageFrame<uint16>(format, data, copy).release())));
+    return MakePacket<Image>(std::shared_ptr<ImageFrame>(
+        CreateImageFrame<uint16>(format, data, copy)));
   } else if (format == mediapipe::ImageFormat::VEC32F1 ||
              format == mediapipe::ImageFormat::VEC32F2) {
-    return MakePacket<Image>(std::make_shared<ImageFrame>(
-        std::move(*CreateImageFrame<float>(format, data, copy).release())));
+    return MakePacket<Image>(std::shared_ptr<ImageFrame>(
+        CreateImageFrame<float>(format, data, copy)));
   }
   throw RaisePyError(PyExc_RuntimeError,
                      absl::StrCat("Unsupported ImageFormat: ", format).c_str());
@@ -76,17 +76,18 @@ Packet CreateImagePacket(mediapipe::ImageFormat::Format format,
 
 namespace py = pybind11;
 
+// The packet creator methods that can be accessed directly by the users.
 void PublicPacketCreators(pybind11::module* m) {
   m->def(
       "create_string",
       [](const std::string& data) { return MakePacket<std::string>(data); },
-      R"doc(Create a MediaPipe std::string Packet from a str.
+      R"doc(Create a MediaPipe string Packet from a str.
 
   Args:
     data: A str.
 
   Returns:
-    A MediaPipe std::string Packet.
+    A MediaPipe string Packet.
 
   Raises:
     TypeError: If the input is not a str.
@@ -100,13 +101,13 @@ void PublicPacketCreators(pybind11::module* m) {
   m->def(
       "create_string",
       [](const py::bytes& data) { return MakePacket<std::string>(data); },
-      R"doc(Create a MediaPipe std::string Packet from a bytes object.
+      R"doc(Create a MediaPipe string Packet from a bytes object.
 
   Args:
     data: A bytes object.
 
   Returns:
-    A MediaPipe std::string Packet.
+    A MediaPipe string Packet.
 
   Raises:
     TypeError: If the input is not a bytes object.
@@ -360,7 +361,7 @@ void PublicPacketCreators(pybind11::module* m) {
     packet = mp.packet_creator.create_float(0.1)
     data = mp.packet_getter.get_float(packet)
 )doc",
-      py::arg().noconvert(), py::return_value_policy::move);
+      py::return_value_policy::move);
 
   m->def(
       "create_double", [](double data) { return MakePacket<double>(data); },
@@ -379,7 +380,7 @@ void PublicPacketCreators(pybind11::module* m) {
     packet = mp.packet_creator.create_double(0.1)
     data = mp.packet_getter.get_float(packet)
 )doc",
-      py::arg().noconvert(), py::return_value_policy::move);
+      py::return_value_policy::move);
 
   m->def(
       "create_int_array",
@@ -498,13 +499,13 @@ void PublicPacketCreators(pybind11::module* m) {
       [](const std::vector<std::string>& data) {
         return MakePacket<std::vector<std::string>>(data);
       },
-      R"doc(Create a MediaPipe std::string vector Packet from a list of str.
+      R"doc(Create a MediaPipe string vector Packet from a list of str.
 
   Args:
     data: A list of str.
 
   Returns:
-    A MediaPipe std::string vector Packet.
+    A MediaPipe string vector Packet.
 
   Raises:
     TypeError: If the input is not a list of str.
@@ -516,17 +517,40 @@ void PublicPacketCreators(pybind11::module* m) {
       py::arg().noconvert(), py::return_value_policy::move);
 
   m->def(
+      "create_image_vector",
+      [](const std::vector<Image>& data) {
+        return MakePacket<std::vector<Image>>(data);
+      },
+      R"doc(Create a MediaPipe Packet holding a vector of MediaPipe Images.
+
+  Args:
+    data: A list of MediaPipe Images.
+
+  Returns:
+    A MediaPipe Packet holding a vector of MediaPipe Images.
+
+  Raises:
+    TypeError: If the input is not a list of MediaPipe Images.
+
+  Examples:
+    packet = mp.packet_creator.create_image_vector([
+        image1, image2, image3])
+    data = mp.packet_getter.get_image_list(packet)
+)doc",
+      py::arg().noconvert(), py::return_value_policy::move);
+
+  m->def(
       "create_packet_vector",
       [](const std::vector<Packet>& data) {
         return MakePacket<std::vector<Packet>>(data);
       },
-      R"doc(Create a MediaPipe Packet holds a vector of packets.
+      R"doc(Create a MediaPipe Packet holding a vector of packets.
 
   Args:
     data: A list of packets.
 
   Returns:
-    A MediaPipe Packet holds a vector of packets.
+    A MediaPipe Packet holding a vector of packets.
 
   Raises:
     TypeError: If the input is not a list of packets.
@@ -546,13 +570,13 @@ void PublicPacketCreators(pybind11::module* m) {
       [](const std::map<std::string, Packet>& data) {
         return MakePacket<std::map<std::string, Packet>>(data);
       },
-      R"doc(Create a MediaPipe std::string to packet map Packet from a dictionary.
+      R"doc(Create a MediaPipe string to packet map Packet from a dictionary.
 
   Args:
     data: A dictionary that has (str, Packet) pairs.
 
   Returns:
-    A MediaPipe Packet holds std::map<std::string, Packet>.
+    A MediaPipe Packet holding std::map<std::string, Packet>.
 
   Raises:
     TypeError: If the input is not a dictionary from str to packet.
@@ -561,7 +585,7 @@ void PublicPacketCreators(pybind11::module* m) {
     dict_packet = mp.packet_creator.create_string_to_packet_map({
         'float': mp.packet_creator.create_float(0.1),
         'int': mp.packet_creator.create_int(1),
-        'std::string': mp.packet_creator.create_string('1')
+        'string': mp.packet_creator.create_string('1')
     data = mp.packet_getter.get_str_to_packet_dict(dict_packet)
 )doc",
       py::arg().noconvert(), py::return_value_policy::move);
@@ -578,8 +602,11 @@ void PublicPacketCreators(pybind11::module* m) {
       // TODO: Should take "const Eigen::Ref<const Eigen::MatrixXf>&"
       // as the input argument. Investigate why bazel non-optimized mode
       // triggers a memory allocation bug in Eigen::internal::aligned_free().
-      [](const Eigen::MatrixXf& matrix) {
+      [](const Eigen::MatrixXf& matrix, bool transpose) {
         // MakePacket copies the data.
+        if (transpose) {
+          return MakePacket<Matrix>(matrix.transpose());
+        }
         return MakePacket<Matrix>(matrix);
       },
       R"doc(Create a MediaPipe Matrix Packet from a 2d numpy float ndarray.
@@ -589,6 +616,8 @@ void PublicPacketCreators(pybind11::module* m) {
 
   Args:
     matrix: A 2d numpy float ndarray.
+    transpose: A boolean to indicate if the input matrix needs to be transposed.
+      Default to False.
 
   Returns:
     A MediaPipe Matrix Packet.
@@ -601,9 +630,11 @@ void PublicPacketCreators(pybind11::module* m) {
         np.array([[.1, .2, .3], [.4, .5, .6]])
     matrix = mp.packet_getter.get_matrix(packet)
 )doc",
+      py::arg("matrix"), py::arg("transpose") = false,
       py::return_value_policy::move);
-}
+}  // NOLINT(readability/fn_size)
 
+// The packet creator methods that should be used by MediaPipe Python itself.
 void InternalPacketCreators(pybind11::module* m) {
   m->def("_create_image_frame_from_pixel_data", &CreateImageFramePacket,
          py::arg("format"), py::arg("data").noconvert(), py::arg("copy"),
@@ -633,8 +664,9 @@ void InternalPacketCreators(pybind11::module* m) {
         // both GPU and CPU can process it.
         image_frame_copy->CopyFrom(*image.GetImageFrameSharedPtr(),
                                    ImageFrame::kGlDefaultAlignmentBoundary);
-        return MakePacket<Image>(std::make_shared<ImageFrame>(
-            std::move(*image_frame_copy.release())));
+        std::shared_ptr<ImageFrame> shared_image_frame =
+            std::move(image_frame_copy);
+        return MakePacket<Image>(shared_image_frame);
       },
       py::arg("image").noconvert(), py::return_value_policy::move);
 

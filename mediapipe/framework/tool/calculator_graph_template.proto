@@ -3,6 +3,7 @@ syntax = "proto2";
 package mediapipe;
 
 import "mediapipe/framework/calculator.proto";
+import "mediapipe/framework/calculator_options.proto";
 import "mediapipe/framework/deps/proto_descriptor.proto";
 
 option java_package = "com.google.mediapipe.proto";
@@ -25,6 +26,9 @@ message TemplateExpression {
 
   // The FieldDescriptor::Type of the modified field.
   optional mediapipe.FieldDescriptorProto.Type field_type = 5;
+
+  // The FieldDescriptor::Type of each map key in the path.
+  repeated mediapipe.FieldDescriptorProto.Type key_type = 6;
 
   // Alternative value for the modified field, in protobuf binary format.
   optional string field_value = 7;

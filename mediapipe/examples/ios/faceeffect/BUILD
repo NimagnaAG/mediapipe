@@ -24,7 +24,7 @@ load(
 
 licenses(["notice"])
 
-MIN_IOS_VERSION = "10.0"
+MIN_IOS_VERSION = "11.0"
 
 alias(
     name = "faceeffect",
@@ -72,13 +72,14 @@ objc_library(
         "//mediapipe/modules/face_geometry/data:geometry_pipeline_metadata_landmarks.binarypb",
         "//mediapipe/modules/face_landmark:face_landmark.tflite",
     ],
-    sdk_frameworks = [
-        "AVFoundation",
-        "CoreGraphics",
-        "CoreMedia",
-        "UIKit",
-    ],
+    features = ["-layering_check"],
     deps = [
+        "//mediapipe/framework/formats:matrix_data_cc_proto",
+        "//third_party/apple_frameworks:AVFoundation",
+        "//third_party/apple_frameworks:CoreGraphics",
+        "//third_party/apple_frameworks:CoreMedia",
+        "//third_party/apple_frameworks:UIKit",
+        "//mediapipe/modules/face_geometry/protos:face_geometry_cc_proto",
         "//mediapipe/objc:mediapipe_framework_ios",
         "//mediapipe/objc:mediapipe_input_sources_ios",
         "//mediapipe/objc:mediapipe_layer_renderer",
@@ -86,9 +87,7 @@ objc_library(
         "//mediapipe:ios_i386": [],
         "//mediapipe:ios_x86_64": [],
         "//conditions:default": [
-            "//mediapipe/framework/formats:matrix_data_cc_proto",
             "//mediapipe/graphs/face_effect:face_effect_gpu_deps",
-            "//mediapipe/modules/face_geometry/protos:face_geometry_cc_proto",
         ],
     }),
 )

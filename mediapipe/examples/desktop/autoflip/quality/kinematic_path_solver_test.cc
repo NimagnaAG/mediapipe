@@ -419,6 +419,13 @@ TEST(KinematicPathSolverTest, PassSetPosition) {
   MP_ASSERT_OK(solver.SetState(400));
   MP_ASSERT_OK(solver.GetState(&state));
   EXPECT_FLOAT_EQ(state, 400);
+  // Expect to stay in bounds.
+  MP_ASSERT_OK(solver.SetState(600));
+  MP_ASSERT_OK(solver.GetState(&state));
+  EXPECT_FLOAT_EQ(state, 500);
+  MP_ASSERT_OK(solver.SetState(-100));
+  MP_ASSERT_OK(solver.GetState(&state));
+  EXPECT_FLOAT_EQ(state, 0);
 }
 TEST(KinematicPathSolverTest, PassBorderTest) {
   KinematicOptions options;
@@ -433,6 +440,23 @@ TEST(KinematicPathSolverTest, PassBorderTest) {
   MP_ASSERT_OK(solver.AddObservation(800, kMicroSecInSec * 0.1));
   MP_ASSERT_OK(solver.GetState(&state));
   EXPECT_FLOAT_EQ(state, 404.56668);
+}
+
+TEST(KinematicPathSolverTest, PassUpdateUpdateMinMaxLocationIfUninitialized) {
+  KinematicOptions options;
+  options.set_min_motion_to_reframe(2.0);
+  options.set_max_velocity(1000);
+  KinematicPathSolver solver(options, 0, 1000, 1000.0 / kWidthFieldOfView);
+  MP_EXPECT_OK(solver.UpdateMinMaxLocation(0, 500));
+}
+
+TEST(KinematicPathSolverTest, PassUpdateUpdateMinMaxLocationIfInitialized) {
+  KinematicOptions options;
+  options.set_min_motion_to_reframe(2.0);
+  options.set_max_velocity(1000);
+  KinematicPathSolver solver(options, 0, 1000, 1000.0 / kWidthFieldOfView);
+  MP_ASSERT_OK(solver.AddObservation(500, kMicroSecInSec * 0));
+  MP_EXPECT_OK(solver.UpdateMinMaxLocation(0, 500));
 }
 
 }  // namespace

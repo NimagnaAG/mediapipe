@@ -19,9 +19,12 @@
 #include <string>
 #include <vector>
 
-#include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "mediapipe/calculators/tensor/inference_calculator.pb.h"
+#include "mediapipe/framework/api2/packet.h"
 #include "mediapipe/framework/tool/subgraph_expansion.h"
+#include "tensorflow/lite/core/api/op_resolver.h"
 
 namespace mediapipe {
 namespace api2 {
@@ -36,17 +39,34 @@ class InferenceCalculatorSelectorImpl
         Subgraph::GetOptions<mediapipe::InferenceCalculatorOptions>(
             subgraph_node);
     std::vector<absl::string_view> impls;
+
     const bool should_use_gpu =
         !options.has_delegate() ||  // Use GPU delegate if not specified
         (options.has_delegate() && options.delegate().has_gpu());
     if (should_use_gpu) {
+      const auto& api = options.delegate().gpu().api();
+      using Gpu = ::mediapipe::InferenceCalculatorOptions::Delegate::Gpu;
       impls.emplace_back("Metal");
-      impls.emplace_back("Gl");
+      const bool prefer_gl_advanced =
+          options.delegate().gpu().use_advanced_gpu_api() &&
+          (api == Gpu::ANY || api == Gpu::OPENGL || api == Gpu::OPENCL);
+      if (prefer_gl_advanced) {
+        impls.emplace_back("GlAdvanced");
+        impls.emplace_back("Gl");
+      } else {
+        impls.emplace_back("Gl");
+        impls.emplace_back("GlAdvanced");
+      }
     }
     impls.emplace_back("Cpu");
+    impls.emplace_back("Xnnpack");
     for (const auto& suffix : impls) {
       const auto impl = absl::StrCat("InferenceCalculator", suffix);
       if (!mediapipe::CalculatorBaseRegistry::IsRegistered(impl)) continue;
+      VLOG(1) << "Using " << suffix << " for InferenceCalculator with "
+              << (options.has_model_path()
+                      ? "model " + options.model_path()
+                      : "output_stream " + subgraph_node.output_stream(0));
       CalculatorGraphConfig::Node impl_node = subgraph_node;
       impl_node.set_calculator(impl);
       return tool::MakeSingleNodeGraph(std::move(impl_node));
@@ -64,6 +84,18 @@ absl::StatusOr<Packet<TfLiteModelPtr>> InferenceCalculator::GetModelAsPacket(
   if (!kSideInModel(cc).IsEmpty()) return kSideInModel(cc);
   return absl::Status(mediapipe::StatusCode::kNotFound,
                       "Must specify TFLite model as path or loaded model.");
+}
+
+absl::StatusOr<Packet<tflite::OpResolver>>
+InferenceCalculator::GetOpResolverAsPacket(CalculatorContext* cc) {
+  if (kSideInOpResolver(cc).IsConnected()) {
+    return kSideInOpResolver(cc).As<tflite::OpResolver>();
+  } else if (kSideInCustomOpResolver(cc).IsConnected()) {
+    return kSideInCustomOpResolver(cc).As<tflite::OpResolver>();
+  }
+  return PacketAdopting<tflite::OpResolver>(
+      std::make_unique<tflite_shims::ops::builtin::
+                           BuiltinOpResolverWithoutDefaultDelegates>());
 }
 
 }  // namespace api2

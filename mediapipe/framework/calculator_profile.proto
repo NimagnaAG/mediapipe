@@ -11,10 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Forked from mediapipe/framework/calculator_profile.proto.
-// The forked proto must remain identical to the original proto and should be
-// ONLY used by mediapipe open source project.
 
 syntax = "proto2";
 
@@ -137,7 +133,13 @@ message GraphTrace {
     TPU_TASK = 13;
     GPU_CALIBRATION = 14;
     PACKET_QUEUED = 15;
+    GPU_TASK_INVOKE = 16;
+    TPU_TASK_INVOKE = 17;
+    CPU_TASK_INVOKE = 18;
   }
+  //  //depot/mediapipe/framework/mediapipe_profiling.h:profiler_census_tags,
+  //  //depot/mediapipe/framework/profiler/trace_buffer.h:event_type_list,
+  // )
 
   // The timing for one packet set being processed at one caclulator node.
   message CalculatorTrace {

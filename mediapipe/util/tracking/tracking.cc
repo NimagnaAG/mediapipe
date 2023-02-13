@@ -648,7 +648,6 @@ bool MotionBoxLines(const MotionBoxState& state, const Vector2_f& scaling,
                     std::array<Vector3_f, 4>* box_lines) {
   CHECK(box_lines);
   std::array<Vector2_f, 4> corners = MotionBoxCorners(state, scaling);
-  std::array<Vector3_f, 4> lines;
   for (int k = 0; k < 4; ++k) {
     const Vector2_f diff = corners[(k + 1) % 4] - corners[k];
     const Vector2_f normal = diff.Ortho().Normalize();
@@ -1324,10 +1323,9 @@ void MotionBox::GetSpatialGaussWeights(const MotionBoxState& box_state,
   const float space_sigma_x = std::max(
       options_.spatial_sigma(), box_state.inlier_width() * inv_box_domain.x() *
                                     0.5f * box_state.prior_weight() / 1.65f);
-  const float space_sigma_y = options_.spatial_sigma();
-  std::max(options_.spatial_sigma(), box_state.inlier_height() *
-                                         inv_box_domain.y() * 0.5f *
-                                         box_state.prior_weight() / 1.65f);
+  const float space_sigma_y = std::max(
+      options_.spatial_sigma(), box_state.inlier_height() * inv_box_domain.y() *
+                                    0.5f * box_state.prior_weight() / 1.65f);
 
   *spatial_gauss_x = -0.5f / (space_sigma_x * space_sigma_x);
   *spatial_gauss_y = -0.5f / (space_sigma_y * space_sigma_y);

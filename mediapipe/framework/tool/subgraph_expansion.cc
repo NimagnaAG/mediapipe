@@ -274,12 +274,14 @@ absl::Status ConnectSubgraphStreams(
 
 absl::Status ExpandSubgraphs(CalculatorGraphConfig* config,
                              const GraphRegistry* graph_registry,
+                             const Subgraph::SubgraphOptions* graph_options,
                              const GraphServiceManager* service_manager) {
   graph_registry =
       graph_registry ? graph_registry : &GraphRegistry::global_graph_registry;
   RET_CHECK(config);
+
   MP_RETURN_IF_ERROR(mediapipe::tool::DefineGraphOptions(
-      CalculatorGraphConfig::Node(), config));
+      graph_options ? *graph_options : CalculatorGraphConfig::Node(), config));
   auto* nodes = config->mutable_node();
   while (1) {
     auto subgraph_nodes_start = std::stable_partition(
@@ -291,7 +293,7 @@ absl::Status ExpandSubgraphs(CalculatorGraphConfig* config,
     if (subgraph_nodes_start == nodes->end()) break;
     std::vector<CalculatorGraphConfig> subgraphs;
     for (auto it = subgraph_nodes_start; it != nodes->end(); ++it) {
-      const auto& node = *it;
+      auto& node = *it;
       int node_id = it - nodes->begin();
       std::string node_name = CanonicalNodeName(*config, node_id);
       MP_RETURN_IF_ERROR(ValidateSubgraphFields(node));
