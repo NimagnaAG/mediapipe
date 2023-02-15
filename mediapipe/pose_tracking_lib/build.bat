@@ -6,8 +6,8 @@ setlocal ENABLEDELAYEDEXPANSION
 :: ----------------------------------------------------------
 
 :: needs to be run from repo root
-if NOT EXIST mediapipe\pose_tracking_dll\pose_tracking.cpp (
-	echo Batch file must be run from repository root, i.e. mediapipe\pose_tracking_dll\build.bat
+if NOT EXIST mediapipe\pose_tracking_lib\pose_tracking.cpp (
+	echo Batch file must be run from repository root, i.e. mediapipe\pose_tracking_lib\build.bat
 	EXIT
 )
 set "LOCALAPPDATA_FORWARDSLASH=%LOCALAPPDATA:\=/%"
@@ -58,9 +58,9 @@ SET MEDIAPIPE_VERSION=0.9.1
 
 IF NOT [%BAZEL_TMP_BUILD_DIR%]==[] (
     ECHO Using temporary build directory: %BAZEL_TMP_BUILD_DIR%
-	bazel --output_base "%BAZEL_TMP_BUILD_DIR%" build -c %MEDIAPIPE_CONFIGURATION% --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_dll:pose_tracking_cpu
+	bazel --output_base "%BAZEL_TMP_BUILD_DIR%" build -c %MEDIAPIPE_CONFIGURATION% --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_lib:pose_tracking_cpu
 ) ELSE (
-	bazel build -c  %MEDIAPIPE_CONFIGURATION%  --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_dll:pose_tracking_cpu
+	bazel build -c  %MEDIAPIPE_CONFIGURATION%  --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_lib:pose_tracking_cpu
 )
 
 :: ----------------------------------------------------------
@@ -71,17 +71,17 @@ IF NOT [%EXTERNAL_PATH%]==[] (
 		SET TARGET_PATH = %EXTERNAL_PATH%\mediapipe\%MEDIAPIPE_VERSION%_x64\x64\Release
 		ECHO Copy files to %TARGET_PATH% ... 
 		mkdir %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\pose_tracking_lib.dll %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\pose_tracking_lib.dll.if.lib %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\opencv_world3410.dll %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\pose_tracking_lib.dll %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\pose_tracking_lib.dll.if.lib %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\opencv_world3410.dll %TARGET_PATH% 
 	) 
 	IF [%MEDIAPIPE_CONFIGURATION%]==[dbg] (
 		SET TARGET_PATH = %EXTERNAL_PATH%\mediapipe\%MEDIAPIPE_VERSION%_x64\x64\Debug
 		ECHO Copy files to %TARGET_PATH% ... 
 		mkdir %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\pose_tracking_lib.dll %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\pose_tracking_lib.dll.if.lib %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\pose_tracking_lib.pdb %TARGET_PATH% 
-		copy bazel-bin\mediapipe\pose_tracking_dll\opencv_world3410d.dll %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\pose_tracking_lib.dll %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\pose_tracking_lib.dll.if.lib %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\pose_tracking_lib.pdb %TARGET_PATH% 
+		copy bazel-bin\mediapipe\pose_tracking_lib\opencv_world3410d.dll %TARGET_PATH% 
 	) 
 )
