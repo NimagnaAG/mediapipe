@@ -14,12 +14,36 @@
 
 #include "mediapipe/gpu/gpu_buffer.h"
 
+#include <utility>
+
+#include "mediapipe/framework/formats/image_format.pb.h"
 #include "mediapipe/framework/port/gmock.h"
 #include "mediapipe/framework/port/gtest.h"
+#include "mediapipe/framework/tool/test_util.h"
+#include "mediapipe/gpu/gl_texture_buffer.h"
+#include "mediapipe/gpu/gl_texture_util.h"
+#include "mediapipe/gpu/gpu_buffer_storage_ahwb.h"
+#include "mediapipe/gpu/gpu_buffer_storage_image_frame.h"
 #include "mediapipe/gpu/gpu_test_base.h"
+#include "stb_image.h"
+#include "stb_image_write.h"
 
 namespace mediapipe {
 namespace {
+
+void FillImageFrameRGBA(ImageFrame& image, uint8 r, uint8 g, uint8 b, uint8 a) {
+  auto* data = image.MutablePixelData();
+  for (int y = 0; y < image.Height(); ++y) {
+    auto* row = data + image.WidthStep() * y;
+    for (int x = 0; x < image.Width(); ++x) {
+      auto* pixel = row + x * image.NumberOfChannels();
+      pixel[0] = r;
+      pixel[1] = g;
+      pixel[2] = b;
+      pixel[3] = a;
+    }
+  }
+}
 
 class GpuBufferTest : public GpuTestBase {};
 
@@ -44,6 +68,186 @@ TEST_F(GpuBufferTest, BasicTest) {
     EXPECT_TRUE(buffer == nullptr);
     EXPECT_TRUE(buffer == no_buffer);
   });
+}
+
+TEST_F(GpuBufferTest, GlTextureView) {
+  GpuBuffer buffer(300, 200, GpuBufferFormat::kBGRA32);
+  EXPECT_EQ(buffer.width(), 300);
+  EXPECT_EQ(buffer.height(), 200);
+  EXPECT_TRUE(buffer);
+  EXPECT_FALSE(buffer == nullptr);
+
+  RunInGlContext([&buffer] {
+    TempGlFramebuffer fb;
+    auto view = buffer.GetWriteView<GlTextureView>(0);
+    FillGlTextureRgba(view, 1.0, 0.0, 0.0, 1.0);
+    glFlush();
+  });
+  std::shared_ptr<const ImageFrame> view = buffer.GetReadView<ImageFrame>();
+  EXPECT_EQ(view->Width(), 300);
+  EXPECT_EQ(view->Height(), 200);
+
+  ImageFrame red(ImageFormat::SRGBA, 300, 200);
+  FillImageFrameRGBA(red, 255, 0, 0, 255);
+
+  EXPECT_TRUE(CompareImageFrames(*view, red, 0.0, 0.0));
+  MP_EXPECT_OK(SavePngTestOutput(red, "gltv_red_gold"));
+  MP_EXPECT_OK(SavePngTestOutput(*view, "gltv_red_view"));
+}
+
+TEST_F(GpuBufferTest, ImageFrame) {
+  GpuBuffer buffer(300, 200, GpuBufferFormat::kBGRA32);
+  EXPECT_EQ(buffer.width(), 300);
+  EXPECT_EQ(buffer.height(), 200);
+  EXPECT_TRUE(buffer);
+  EXPECT_FALSE(buffer == nullptr);
+
+  {
+    std::shared_ptr<ImageFrame> view = buffer.GetWriteView<ImageFrame>();
+    EXPECT_EQ(view->Width(), 300);
+    EXPECT_EQ(view->Height(), 200);
+    FillImageFrameRGBA(*view, 255, 0, 0, 255);
+  }
+
+  GpuBuffer buffer2(300, 200, GpuBufferFormat::kBGRA32);
+  RunInGlContext([&buffer, &buffer2] {
+    TempGlFramebuffer fb;
+    auto src = buffer.GetReadView<GlTextureView>(0);
+    auto dst = buffer2.GetWriteView<GlTextureView>(0);
+    CopyGlTexture(src, dst);
+    glFlush();
+  });
+  {
+    std::shared_ptr<const ImageFrame> view = buffer2.GetReadView<ImageFrame>();
+    EXPECT_EQ(view->Width(), 300);
+    EXPECT_EQ(view->Height(), 200);
+
+    ImageFrame red(ImageFormat::SRGBA, 300, 200);
+    FillImageFrameRGBA(red, 255, 0, 0, 255);
+
+    EXPECT_TRUE(CompareImageFrames(*view, red, 0.0, 0.0));
+    MP_EXPECT_OK(SavePngTestOutput(red, "if_red_gold"));
+    MP_EXPECT_OK(SavePngTestOutput(*view, "if_red_view"));
+  }
+}
+
+TEST_F(GpuBufferTest, Overwrite) {
+  GpuBuffer buffer(300, 200, GpuBufferFormat::kBGRA32);
+  EXPECT_EQ(buffer.width(), 300);
+  EXPECT_EQ(buffer.height(), 200);
+  EXPECT_TRUE(buffer);
+  EXPECT_FALSE(buffer == nullptr);
+
+  {
+    std::shared_ptr<ImageFrame> view = buffer.GetWriteView<ImageFrame>();
+    EXPECT_EQ(view->Width(), 300);
+    EXPECT_EQ(view->Height(), 200);
+    FillImageFrameRGBA(*view, 255, 0, 0, 255);
+  }
+
+  GpuBuffer red_copy(300, 200, GpuBufferFormat::kBGRA32);
+  RunInGlContext([&buffer, &red_copy] {
+    TempGlFramebuffer fb;
+    auto src = buffer.GetReadView<GlTextureView>(0);
+    auto dst = red_copy.GetWriteView<GlTextureView>(0);
+    CopyGlTexture(src, dst);
+    glFlush();
+  });
+
+  {
+    std::shared_ptr<const ImageFrame> view = red_copy.GetReadView<ImageFrame>();
+    ImageFrame red(ImageFormat::SRGBA, 300, 200);
+    FillImageFrameRGBA(red, 255, 0, 0, 255);
+
+    EXPECT_TRUE(CompareImageFrames(*view, red, 0.0, 0.0));
+    MP_EXPECT_OK(SavePngTestOutput(red, "ow_red_gold"));
+    MP_EXPECT_OK(SavePngTestOutput(*view, "ow_red_view"));
+  }
+
+  {
+    std::shared_ptr<ImageFrame> view = buffer.GetWriteView<ImageFrame>();
+    EXPECT_EQ(view->Width(), 300);
+    EXPECT_EQ(view->Height(), 200);
+    FillImageFrameRGBA(*view, 0, 255, 0, 255);
+  }
+
+  GpuBuffer green_copy(300, 200, GpuBufferFormat::kBGRA32);
+  RunInGlContext([&buffer, &green_copy] {
+    TempGlFramebuffer fb;
+    auto src = buffer.GetReadView<GlTextureView>(0);
+    auto dst = green_copy.GetWriteView<GlTextureView>(0);
+    CopyGlTexture(src, dst);
+    glFlush();
+  });
+
+  RunInGlContext([&buffer] {
+    TempGlFramebuffer fb;
+    auto view = buffer.GetWriteView<GlTextureView>(0);
+    FillGlTextureRgba(view, 0.0, 0.0, 1.0, 1.0);
+    glFlush();
+  });
+
+  {
+    std::shared_ptr<const ImageFrame> view =
+        green_copy.GetReadView<ImageFrame>();
+    ImageFrame green(ImageFormat::SRGBA, 300, 200);
+    FillImageFrameRGBA(green, 0, 255, 0, 255);
+
+    EXPECT_TRUE(CompareImageFrames(*view, green, 0.0, 0.0));
+    MP_EXPECT_OK(SavePngTestOutput(green, "ow_green_gold"));
+    MP_EXPECT_OK(SavePngTestOutput(*view, "ow_green_view"));
+  }
+
+  {
+    std::shared_ptr<const ImageFrame> view = buffer.GetReadView<ImageFrame>();
+    ImageFrame blue(ImageFormat::SRGBA, 300, 200);
+    FillImageFrameRGBA(blue, 0, 0, 255, 255);
+
+    EXPECT_TRUE(CompareImageFrames(*view, blue, 0.0, 0.0));
+    MP_EXPECT_OK(SavePngTestOutput(blue, "ow_blue_gold"));
+    MP_EXPECT_OK(SavePngTestOutput(*view, "ow_blue_view"));
+  }
+}
+
+TEST_F(GpuBufferTest, GlTextureViewRetainsWhatItNeeds) {
+  GpuBuffer buffer(300, 200, GpuBufferFormat::kBGRA32);
+  {
+    std::shared_ptr<ImageFrame> view = buffer.GetWriteView<ImageFrame>();
+    EXPECT_EQ(view->Width(), 300);
+    EXPECT_EQ(view->Height(), 200);
+    FillImageFrameRGBA(*view, 255, 0, 0, 255);
+  }
+
+  RunInGlContext([buffer = std::move(buffer)]() mutable {
+    // This is not a recommended pattern, but let's make sure that we don't
+    // crash if the buffer is released before the view. The view can hold
+    // callbacks into its underlying storage.
+    auto view = buffer.GetReadView<GlTextureView>(0);
+    buffer = nullptr;
+  });
+  // We're really checking that we haven't crashed.
+  EXPECT_TRUE(true);
+}
+
+TEST_F(GpuBufferTest, CopiesShareConversions) {
+  GpuBuffer buffer(300, 200, GpuBufferFormat::kBGRA32);
+  {
+    std::shared_ptr<ImageFrame> view = buffer.GetWriteView<ImageFrame>();
+    FillImageFrameRGBA(*view, 255, 0, 0, 255);
+  }
+
+  GpuBuffer other_handle = buffer;
+  RunInGlContext([&buffer] {
+    TempGlFramebuffer fb;
+    auto view = buffer.GetReadView<GlTextureView>(0);
+  });
+
+  // Check that other_handle also sees the same GlTextureBuffer as buffer.
+  // Note that this is deliberately written so that it still passes on platforms
+  // where we use another storage for GL textures (they will both be null).
+  // TODO: expose more accessors for testing?
+  EXPECT_EQ(other_handle.internal_storage<GlTextureBuffer>(),
+            buffer.internal_storage<GlTextureBuffer>());
 }
 
 }  // anonymous namespace

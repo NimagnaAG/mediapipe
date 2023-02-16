@@ -26,6 +26,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
+#include "mediapipe/framework/calculator.pb.h"
 #include "mediapipe/framework/deps/proto_descriptor.pb.h"
 #include "mediapipe/framework/port/canonical_errors.h"
 #include "mediapipe/framework/port/integral_types.h"
@@ -37,7 +38,6 @@
 #include "mediapipe/framework/tool/proto_util_lite.h"
 
 using mediapipe::proto_ns::Descriptor;
-using mediapipe::proto_ns::DescriptorPool;
 using mediapipe::proto_ns::DynamicMessageFactory;
 using mediapipe::proto_ns::EnumDescriptor;
 using mediapipe::proto_ns::EnumValueDescriptor;
@@ -46,6 +46,9 @@ using mediapipe::proto_ns::Message;
 using mediapipe::proto_ns::OneofDescriptor;
 using mediapipe::proto_ns::Reflection;
 using mediapipe::proto_ns::TextFormat;
+using ProtoPath = mediapipe::tool::ProtoUtilLite::ProtoPath;
+using FieldType = mediapipe::tool::ProtoUtilLite::FieldType;
+using FieldValue = mediapipe::tool::ProtoUtilLite::FieldValue;
 
 namespace mediapipe {
 
@@ -261,7 +264,7 @@ class TemplateParser::Parser::ParserImpl {
   typedef proto_ns::TextFormat::ParseLocation ParseLocation;
 
   // Determines if repeated values for non-repeated fields and
-  // oneofs are permitted, e.g., the std::string "foo: 1 foo: 2" for a
+  // oneofs are permitted, e.g., the string "foo: 1 foo: 2" for a
   // required/optional field named "foo", or "baz: 1 qux: 2"
   // where "baz" and "qux" are members of the same oneof.
   enum SingularOverwritePolicy {
@@ -327,7 +330,7 @@ class TemplateParser::Parser::ParserImpl {
     return suc && LookingAtType(io::Tokenizer::TYPE_END);
   }
 
-  void ReportError(int line, int col, const std::string& message) {
+  void ReportError(int line, int col, absl::string_view message) {
     had_errors_ = true;
     if (error_collector_ == NULL) {
       if (line >= 0) {
@@ -339,11 +342,11 @@ class TemplateParser::Parser::ParserImpl {
                    << root_message_type_->full_name() << ": " << message;
       }
     } else {
-      error_collector_->AddError(line, col, message);
+      error_collector_->AddError(line, col, std::string(message));
     }
   }
 
-  void ReportWarning(int line, int col, const std::string& message) {
+  void ReportWarning(int line, int col, absl::string_view message) {
     if (error_collector_ == NULL) {
       if (line >= 0) {
         LOG(WARNING) << "Warning parsing text-format "
@@ -354,21 +357,21 @@ class TemplateParser::Parser::ParserImpl {
                      << root_message_type_->full_name() << ": " << message;
       }
     } else {
-      error_collector_->AddWarning(line, col, message);
+      error_collector_->AddWarning(line, col, std::string(message));
     }
   }
 
  protected:
   // Reports an error with the given message with information indicating
   // the position (as derived from the current token).
-  void ReportError(const std::string& message) {
+  void ReportError(absl::string_view message) {
     ReportError(tokenizer_.current().line, tokenizer_.current().column,
                 message);
   }
 
   // Reports a warning with the given message with information indicating
   // the position (as derived from the current token).
-  void ReportWarning(const std::string& message) {
+  void ReportWarning(absl::string_view message) {
     ReportWarning(tokenizer_.current().line, tokenizer_.current().column,
                   message);
   }
@@ -376,7 +379,7 @@ class TemplateParser::Parser::ParserImpl {
   // Consumes the specified message with the given starting delimiter.
   // This method checks to see that the end delimiter at the conclusion of
   // the consumption matches the starting delimiter passed in here.
-  bool ConsumeMessage(Message* message, const std::string delimiter) {
+  bool ConsumeMessage(Message* message, absl::string_view delimiter) {
     while (!LookingAt(">") && !LookingAt("}")) {
       if (LookingAt("%")) {
         DO(ConsumeFieldTemplate(message));
@@ -402,15 +405,15 @@ class TemplateParser::Parser::ParserImpl {
   }
 
 #ifndef PROTO2_OPENSOURCE
-  // Consumes a std::string value and parses it as a packed repeated field into
+  // Consumes a string value and parses it as a packed repeated field into
   // the given field of the given message.
-  bool ConsumePackedFieldAsString(const std::string& field_name,
+  bool ConsumePackedFieldAsString(absl::string_view field_name,
                                   const FieldDescriptor* field,
                                   Message* message) {
     std::string packed;
     DO(ConsumeString(&packed));
 
-    // Prepend field tag and varint-encoded std::string length to turn into
+    // Prepend field tag and varint-encoded string length to turn into
     // encoded message.
     std::string tagged;
     {
@@ -428,8 +431,8 @@ class TemplateParser::Parser::ParserImpl {
     io::ArrayInputStream array_input(tagged.data(), tagged.size());
     io::CodedInputStream coded_input(&array_input);
     if (!message->MergePartialFromCodedStream(&coded_input)) {
-      ReportError("Could not parse packed field \"" + field_name +
-                  "\" as wire-encoded std::string.");
+      ReportError(absl::StrCat("Could not parse packed field \"", field_name,
+                               "\" as wire-encoded string."));
       return false;
     }
 
@@ -608,7 +611,7 @@ class TemplateParser::Parser::ParserImpl {
       bool consumed_semicolon = TryConsume(":");
       if (consumed_semicolon && field->options().weak() &&
           LookingAtType(io::Tokenizer::TYPE_STRING)) {
-        // we are getting a bytes std::string for a weak field.
+        // we are getting a bytes string for a weak field.
         std::string tmp;
         DO(ConsumeString(&tmp));
         reflection->MutableMessage(message, field)->ParseFromString(tmp);
@@ -641,8 +644,8 @@ class TemplateParser::Parser::ParserImpl {
 #ifndef PROTO2_OPENSOURCE
     } else if (field->is_packable() &&
                LookingAtType(io::Tokenizer::TYPE_STRING)) {
-      // Packable field printed as wire-formatted std::string: "foo: "abc\123"".
-      // Fields of type std::string cannot be packed themselves, so this is
+      // Packable field printed as wire-formatted string: "foo: "abc\123"".
+      // Fields of type string cannot be packed themselves, so this is
       // unambiguous.
       DO(ConsumePackedFieldAsString(field_name, field, message));
 #endif  // !PROTO2_OPENSOURCE
@@ -909,7 +912,7 @@ class TemplateParser::Parser::ParserImpl {
       }
       return true;
     }
-    // Possible field values other than std::string:
+    // Possible field values other than string:
     //   12345        => TYPE_INTEGER
     //   -12345       => TYPE_SYMBOL + TYPE_INTEGER
     //   1.2345       => TYPE_FLOAT
@@ -993,7 +996,7 @@ class TemplateParser::Parser::ParserImpl {
     return false;
   }
 
-  // Consume a std::string of form "<id1>.<id2>....<idN>".
+  // Consume a string of form "<id1>.<id2>....<idN>".
   bool ConsumeFullTypeName(std::string* name) {
     DO(ConsumeIdentifier(name));
     while (TryConsume(".")) {
@@ -1014,11 +1017,11 @@ class TemplateParser::Parser::ParserImpl {
     return true;
   }
 
-  // Consumes a std::string and saves its value in the text parameter.
+  // Consumes a string and saves its value in the text parameter.
   // Returns false if the token is not of type STRING.
   bool ConsumeString(std::string* text) {
     if (!LookingAtType(io::Tokenizer::TYPE_STRING)) {
-      ReportError("Expected std::string, got: " + tokenizer_.current().text);
+      ReportError("Expected string, got: " + tokenizer_.current().text);
       return false;
     }
 
@@ -1216,12 +1219,12 @@ class TemplateParser::Parser::ParserImpl {
   // Consumes a token and confirms that it matches that specified in the
   // value parameter. Returns false if the token found does not match that
   // which was specified.
-  bool Consume(const std::string& value) {
+  bool Consume(absl::string_view value) {
     const std::string& current_value = tokenizer_.current().text;
 
     if (current_value != value) {
-      ReportError("Expected \"" + value + "\", found \"" + current_value +
-                  "\".");
+      ReportError(absl::StrCat("Expected \"", value, "\", found \"",
+                               current_value, "\"."));
       return false;
     }
 
@@ -1358,32 +1361,138 @@ absl::Status ProtoPathSplit(const std::string& path,
       if (!ok) {
         status.Update(absl::InvalidArgumentError(path));
       }
-      result->push_back(std::make_pair(tag, index));
+      result->push_back({tag, index});
     }
   }
   return status;
+}
+
+// Returns a message serialized deterministically.
+bool DeterministicallySerialize(const Message& proto, std::string* result) {
+  proto_ns::io::StringOutputStream stream(result);
+  proto_ns::io::CodedOutputStream output(&stream);
+  output.SetSerializationDeterministic(true);
+  return proto.SerializeToCodedStream(&output);
 }
 
 // Serialize one field of a message.
 void SerializeField(const Message* message, const FieldDescriptor* field,
                     std::vector<ProtoUtilLite::FieldValue>* result) {
   ProtoUtilLite::FieldValue message_bytes;
-  CHECK(message->SerializePartialToString(&message_bytes));
+  CHECK(DeterministicallySerialize(*message, &message_bytes));
   ProtoUtilLite::FieldAccess access(
       field->number(), static_cast<ProtoUtilLite::FieldType>(field->type()));
   MEDIAPIPE_CHECK_OK(access.SetMessage(message_bytes));
   *result = *access.mutable_field_values();
 }
 
+// Serialize a ProtoPath as a readable string.
+// For example, {{1, 1}, {2, 1}, {3, 1}} returns "/1[1]/2[1]/3[1]",
+// and {{1, 1}, {2, 1, "INPUT_FRAMES"}} returns "/1[1]/2[@1=INPUT_FRAMES]".
+std::string ProtoPathJoin(ProtoPath path) {
+  std::string result;
+  for (ProtoUtilLite::ProtoPathEntry& e : path) {
+    if (e.field_id >= 0) {
+      absl::StrAppend(&result, "/", e.field_id, "[", e.index, "]");
+    } else if (e.map_id >= 0) {
+      absl::StrAppend(&result, "/", e.map_id, "[@", e.key_id, "=", e.key_value,
+                      "]");
+    }
+  }
+  return result;
+}
+
+// Returns the message value from a field at an index.
+const Message* GetFieldMessage(const Message& message,
+                               const FieldDescriptor* field, int index) {
+  if (field->type() != FieldDescriptor::TYPE_MESSAGE) {
+    return nullptr;
+  }
+  if (!field->is_repeated()) {
+    return &message.GetReflection()->GetMessage(message, field);
+  }
+  if (index < message.GetReflection()->FieldSize(message, field)) {
+    return &message.GetReflection()->GetRepeatedMessage(message, field, index);
+  }
+  return nullptr;
+}
+
+// Returns all FieldDescriptors including extensions.
+std::vector<const FieldDescriptor*> GetFields(const Message* src) {
+  std::vector<const FieldDescriptor*> result;
+  src->GetDescriptor()->file()->pool()->FindAllExtensions(src->GetDescriptor(),
+                                                          &result);
+  for (int i = 0; i < src->GetDescriptor()->field_count(); ++i) {
+    result.push_back(src->GetDescriptor()->field(i));
+  }
+  return result;
+}
+
+// Orders map entries in dst to match src.
+void OrderMapEntries(const Message* src, Message* dst,
+                     std::set<const Message*>* seen = nullptr) {
+  std::unique_ptr<std::set<const Message*>> seen_owner;
+  if (!seen) {
+    seen_owner = std::make_unique<std::set<const Message*>>();
+    seen = seen_owner.get();
+  }
+  if (seen->count(src) > 0) {
+    return;
+  } else {
+    seen->insert(src);
+  }
+  for (auto field : GetFields(src)) {
+    if (field->is_map()) {
+      dst->GetReflection()->ClearField(dst, field);
+      for (int j = 0; j < src->GetReflection()->FieldSize(*src, field); ++j) {
+        const Message& entry =
+            src->GetReflection()->GetRepeatedMessage(*src, field, j);
+        dst->GetReflection()->AddMessage(dst, field)->CopyFrom(entry);
+      }
+    }
+    if (field->type() == FieldDescriptor::TYPE_MESSAGE) {
+      if (field->is_repeated()) {
+        for (int j = 0; j < src->GetReflection()->FieldSize(*src, field); ++j) {
+          OrderMapEntries(
+              &src->GetReflection()->GetRepeatedMessage(*src, field, j),
+              dst->GetReflection()->MutableRepeatedMessage(dst, field, j),
+              seen);
+        }
+      } else {
+        OrderMapEntries(&src->GetReflection()->GetMessage(*src, field),
+                        dst->GetReflection()->MutableMessage(dst, field), seen);
+      }
+    }
+  }
+}
+
+// Copies a Message, keeping map entries in order.
+std::unique_ptr<Message> CloneMessage(const Message* message) {
+  std::unique_ptr<Message> result(message->New());
+  result->CopyFrom(*message);
+  OrderMapEntries(message, result.get());
+  return result;
+}
+
+using MessageMap = std::map<std::string, std::unique_ptr<Message>>;
+
 // For a non-repeated field, move the most recently parsed field value
 // into the most recently parsed template expression.
-void StowFieldValue(Message* message, TemplateExpression* expression) {
+void StowFieldValue(Message* message, TemplateExpression* expression,
+                    MessageMap* stowed_messages) {
   const Reflection* reflection = message->GetReflection();
   const Descriptor* descriptor = message->GetDescriptor();
   ProtoUtilLite::ProtoPath path;
   MEDIAPIPE_CHECK_OK(ProtoPathSplit(expression->path(), &path));
-  int field_number = path[path.size() - 1].first;
+  int field_number = path[path.size() - 1].field_id;
   const FieldDescriptor* field = descriptor->FindFieldByNumber(field_number);
+
+  // Save each stowed message unserialized preserving map entry order.
+  if (!field->is_repeated() && field->type() == FieldDescriptor::TYPE_MESSAGE) {
+    (*stowed_messages)[ProtoPathJoin(path)] =
+        CloneMessage(GetFieldMessage(*message, field, 0));
+  }
+
   if (!field->is_repeated()) {
     std::vector<ProtoUtilLite::FieldValue> field_values;
     SerializeField(message, field, &field_values);
@@ -1392,7 +1501,7 @@ void StowFieldValue(Message* message, TemplateExpression* expression) {
   }
 }
 
-// Strips first and last quotes from a std::string.
+// Strips first and last quotes from a string.
 static void StripQuotes(std::string* str) {
   // Strip off the leading and trailing quotation marks from the value, if
   // there are any.
@@ -1401,6 +1510,112 @@ static void StripQuotes(std::string* str) {
     str->erase(0, 1);
     str->erase(str->size() - 1);
   }
+}
+
+// Returns the field or extension for field number.
+const FieldDescriptor* FindFieldByNumber(const Message* message,
+                                         int field_num) {
+  const FieldDescriptor* result =
+      message->GetDescriptor()->FindFieldByNumber(field_num);
+  if (result == nullptr) {
+    result = message->GetReflection()->FindKnownExtensionByNumber(field_num);
+  }
+  return result;
+}
+
+// Returns the protobuf map key types from a ProtoPath.
+std::vector<FieldType> ProtoPathKeyTypes(ProtoPath path) {
+  std::vector<FieldType> result;
+  for (auto& entry : path) {
+    if (entry.map_id >= 0) {
+      result.push_back(entry.key_type);
+    }
+  }
+  return result;
+}
+
+// Returns the text value for a string or numeric protobuf map key.
+std::string GetMapKey(const Message& map_entry) {
+  auto key_field = map_entry.GetDescriptor()->FindFieldByName("key");
+  auto reflection = map_entry.GetReflection();
+  if (key_field->type() == FieldDescriptor::TYPE_STRING) {
+    return reflection->GetString(map_entry, key_field);
+  } else if (key_field->type() == FieldDescriptor::TYPE_INT32) {
+    return absl::StrCat(reflection->GetInt32(map_entry, key_field));
+  } else if (key_field->type() == FieldDescriptor::TYPE_INT64) {
+    return absl::StrCat(reflection->GetInt64(map_entry, key_field));
+  }
+  return "";
+}
+
+// Returns a Message store in CalculatorGraphTemplate::field_value.
+Message* FindStowedMessage(MessageMap* stowed_messages, ProtoPath proto_path) {
+  auto it = stowed_messages->find(ProtoPathJoin(proto_path));
+  return (it != stowed_messages->end()) ? it->second.get() : nullptr;
+}
+
+const Message* GetNestedMessage(const Message& message,
+                                const FieldDescriptor* field,
+                                ProtoPath proto_path,
+                                MessageMap* stowed_messages) {
+  if (field->type() != FieldDescriptor::TYPE_MESSAGE) {
+    return nullptr;
+  }
+  const Message* result = FindStowedMessage(stowed_messages, proto_path);
+  if (!result) {
+    result = GetFieldMessage(message, field, proto_path.back().index);
+  }
+  return result;
+}
+
+// Adjusts map-entries from indexes to keys.
+// Protobuf map-entry order is intentionally not preserved.
+absl::Status KeyProtoMapEntries(Message* source, MessageMap* stowed_messages) {
+  // Copy the rules from the source CalculatorGraphTemplate.
+  mediapipe::CalculatorGraphTemplate rules;
+  rules.ParsePartialFromString(source->SerializePartialAsString());
+  // Only the "source" Message knows all extension types.
+  Message* config_0 = source->GetReflection()->MutableMessage(
+      source, source->GetDescriptor()->FindFieldByName("config"), nullptr);
+  for (int i = 0; i < rules.rule().size(); ++i) {
+    TemplateExpression* rule = rules.mutable_rule()->Mutable(i);
+    const Message* message = config_0;
+    ProtoPath path;
+    MP_RETURN_IF_ERROR(ProtoPathSplit(rule->path(), &path));
+    for (int j = 0; j < path.size(); ++j) {
+      int field_id = path[j].field_id;
+      const FieldDescriptor* field = FindFieldByNumber(message, field_id);
+      ProtoPath prefix = {path.begin(), path.begin() + j + 1};
+      message = GetNestedMessage(*message, field, prefix, stowed_messages);
+      if (!message) {
+        break;
+      }
+      if (field->is_map()) {
+        const Message* map_entry = message;
+        int key_id =
+            map_entry->GetDescriptor()->FindFieldByName("key")->number();
+        FieldType key_type = static_cast<ProtoUtilLite::FieldType>(
+            map_entry->GetDescriptor()->FindFieldByName("key")->type());
+        std::string key_value = GetMapKey(*map_entry);
+        path[j] = {field_id, key_id, key_type, key_value};
+      }
+    }
+    if (!rule->path().empty()) {
+      *rule->mutable_path() = ProtoPathJoin(path);
+      for (FieldType key_type : ProtoPathKeyTypes(path)) {
+        *rule->mutable_key_type()->Add() = key_type;
+      }
+    }
+  }
+  // Copy the rules back into the source CalculatorGraphTemplate.
+  auto source_rules =
+      source->GetReflection()->GetMutableRepeatedFieldRef<Message>(
+          source, source->GetDescriptor()->FindFieldByName("rule"));
+  source_rules.Clear();
+  for (auto& rule : rules.rule()) {
+    source_rules.Add(rule);
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -1417,6 +1632,8 @@ class TemplateParser::Parser::MediaPipeParserImpl
 
     // Copy the template rules into the output template "rule" field.
     success &= MergeFields(template_rules_, output).ok();
+    // Replace map-entry indexes with map keys.
+    success &= KeyProtoMapEntries(output, &stowed_messages_).ok();
     return success;
   }
 
@@ -1442,7 +1659,7 @@ class TemplateParser::Parser::MediaPipeParserImpl
       DO(ConsumeFieldTemplate(message));
     } else {
       DO(ConsumeField(message));
-      StowFieldValue(message, expression);
+      StowFieldValue(message, expression, &stowed_messages_);
     }
     DO(ConsumeEndTemplate());
     return true;
@@ -1586,7 +1803,7 @@ class TemplateParser::Parser::MediaPipeParserImpl
     return true;
   }
 
-  // Parses a numeric or a std::string literal.
+  // Parses a numeric or a string literal.
   bool ConsumeLiteral(TemplateExpression* result) {
     std::string token = tokenizer_.current().text;
     StripQuotes(&token);
@@ -1653,6 +1870,7 @@ class TemplateParser::Parser::MediaPipeParserImpl
   }
 
   mediapipe::CalculatorGraphTemplate template_rules_;
+  std::map<std::string, std::unique_ptr<Message>> stowed_messages_;
 };
 
 #undef DO
@@ -1666,7 +1884,6 @@ TemplateParser::Parser::Parser()
       allow_partial_(false),
       allow_case_insensitive_field_(false),
       allow_unknown_field_(false),
-      allow_unknown_extension_(true),
       allow_unknown_enum_(false),
       allow_field_number_(false),
       allow_relaxed_whitespace_(false),
@@ -1685,10 +1902,11 @@ bool TemplateParser::Parser::Parse(io::ZeroCopyInputStream* input,
                                  : ParserImpl::FORBID_SINGULAR_OVERWRITES;
 
   int recursion_limit = std::numeric_limits<int>::max();
+  bool allow_unknown_extension = false;
   MediaPipeParserImpl parser(
       output->GetDescriptor(), input, error_collector_, finder_,
       parse_info_tree_, overwrites_policy, allow_case_insensitive_field_,
-      allow_unknown_field_, allow_unknown_extension_, allow_unknown_enum_,
+      allow_unknown_field_, allow_unknown_extension, allow_unknown_enum_,
       allow_field_number_, allow_relaxed_whitespace_, allow_partial_,
       recursion_limit);
   return MergeUsingImpl(input, output, &parser);
@@ -1703,11 +1921,12 @@ bool TemplateParser::Parser::ParseFromString(const std::string& input,
 bool TemplateParser::Parser::Merge(io::ZeroCopyInputStream* input,
                                    Message* output) {
   int recursion_limit = std::numeric_limits<int>::max();
+  bool allow_unknown_extension = false;
   MediaPipeParserImpl parser(
       output->GetDescriptor(), input, error_collector_, finder_,
       parse_info_tree_, ParserImpl::ALLOW_SINGULAR_OVERWRITES,
       allow_case_insensitive_field_, allow_unknown_field_,
-      allow_unknown_extension_, allow_unknown_enum_, allow_field_number_,
+      allow_unknown_extension, allow_unknown_enum_, allow_field_number_,
       allow_relaxed_whitespace_, allow_partial_, recursion_limit);
   return MergeUsingImpl(input, output, &parser);
 }
@@ -1737,11 +1956,12 @@ bool TemplateParser::Parser::ParseFieldValueFromString(
     const std::string& input, const FieldDescriptor* field, Message* output) {
   io::ArrayInputStream input_stream(input.data(), input.size());
   int recursion_limit = std::numeric_limits<int>::max();
+  bool allow_unknown_extension = false;
   ParserImpl parser(
       output->GetDescriptor(), &input_stream, error_collector_, finder_,
       parse_info_tree_, ParserImpl::ALLOW_SINGULAR_OVERWRITES,
       allow_case_insensitive_field_, allow_unknown_field_,
-      allow_unknown_extension_, allow_unknown_enum_, allow_field_number_,
+      allow_unknown_extension, allow_unknown_enum_, allow_field_number_,
       allow_relaxed_whitespace_, allow_partial_, recursion_limit);
   return parser.ParseField(field, output);
 }

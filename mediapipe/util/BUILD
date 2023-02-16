@@ -36,6 +36,12 @@ mediapipe_proto_library(
 )
 
 mediapipe_proto_library(
+    name = "label_map_proto",
+    srcs = ["label_map.proto"],
+    visibility = ["//visibility:public"],
+)
+
+mediapipe_proto_library(
     name = "render_data_proto",
     srcs = ["render_data.proto"],
     visibility = ["//visibility:public"],
@@ -125,6 +131,21 @@ cc_library(
 )
 
 cc_library(
+    name = "label_map_util",
+    srcs = ["label_map_util.cc"],
+    hdrs = ["label_map_util.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":label_map_cc_proto",
+        "//mediapipe/framework/port:core_proto",
+        "//mediapipe/framework/port:integral_types",
+        "//mediapipe/framework/port:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
     name = "annotation_renderer",
     srcs = ["annotation_renderer.cc"],
     hdrs = ["annotation_renderer.h"],
@@ -158,12 +179,14 @@ cc_library(
     ] + select({
         "//conditions:default": ["resource_util_default.cc"],
         "//mediapipe:android": ["resource_util_android.cc"],
+        "//mediapipe/framework:android_no_jni": ["resource_util_loonix.cc"],
         "//mediapipe:ios": ["resource_util_apple.cc"],
         "//mediapipe:macos": ["resource_util_default.cc"],
     }),
     hdrs = [
         "resource_util.h",
     ],
+
     # We use Objective-C++ on iOS.
     copts = select({
         "//conditions:default": [],
@@ -192,6 +215,7 @@ cc_library(
             "//mediapipe/util/android:asset_manager_util",
             "//mediapipe/util/android/file/base",
         ],
+        "//mediapipe/framework:android_no_jni": [],
         "//mediapipe:ios": [],
         "//mediapipe:macos": [
             "@com_google_absl//absl/flags:flag",
@@ -205,6 +229,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//mediapipe/framework/port:logging",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/functional:function_ref",
     ],
 )
@@ -230,6 +255,7 @@ cc_library(
     deps = [
         "//mediapipe/framework/formats:detection_cc_proto",
         "//mediapipe/framework/formats:location",
+        "//mediapipe/framework/formats:location_opencv",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:variant",
         "//mediapipe/framework/port:status",
@@ -269,7 +295,6 @@ cc_library(
         ":time_series_util",
         "//mediapipe/framework:calculator_framework",
         "//mediapipe/framework:calculator_runner",
-        "//mediapipe/framework/deps:message_matchers",
         "//mediapipe/framework/formats:matrix",
         "//mediapipe/framework/formats:time_series_header_cc_proto",
         "//mediapipe/framework/port:gtest_main",
@@ -289,7 +314,6 @@ cc_test(
     deps = [
         ":time_series_util",
         "//mediapipe/framework:calculator_framework",
-        "//mediapipe/framework/deps:message_matchers",
         "//mediapipe/framework/formats:time_series_header_cc_proto",
         "//mediapipe/framework/port:gtest_main",
         "@eigen_archive//:eigen3",
@@ -319,5 +343,47 @@ cc_test(
         "//mediapipe/framework:port",
         "//mediapipe/framework:timestamp",
         "//mediapipe/framework/port:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "rectangle_util",
+    srcs = ["rectangle_util.cc"],
+    hdrs = ["rectangle_util.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mediapipe/framework/formats:rect_cc_proto",
+        "//mediapipe/framework/port:rectangle",
+        "//mediapipe/framework/port:ret_check",
+        "//mediapipe/framework/port:statusor",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "rectangle_util_test",
+    srcs = ["rectangle_util_test.cc"],
+    deps = [
+        ":rectangle_util",
+        "//mediapipe/framework/port:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "image_test_utils",
+    testonly = 1,
+    srcs = ["image_test_utils.cc"],
+    hdrs = ["image_test_utils.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mediapipe/framework:packet",
+        "//mediapipe/framework:timestamp",
+        "//mediapipe/framework/formats:image",
+        "//mediapipe/framework/formats:image_frame",
+        "//mediapipe/framework/formats:image_frame_opencv",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:opencv_imgcodecs",
+        "//mediapipe/framework/port:opencv_imgproc",
     ],
 )

@@ -19,7 +19,6 @@
 #include "mediapipe/framework/calculator.pb.h"
 #include "mediapipe/framework/calculator_framework.h"
 #include "mediapipe/framework/calculator_runner.h"
-#include "mediapipe/framework/deps/message_matchers.h"
 #include "mediapipe/framework/formats/detection.pb.h"
 #include "mediapipe/framework/formats/location_data.pb.h"
 #include "mediapipe/framework/formats/rect.pb.h"
@@ -39,6 +38,9 @@ constexpr char kNormRectTag[] = "NORM_RECT";
 constexpr char kImageSizeTag[] = "IMAGE_SIZE";
 constexpr char kRectTag[] = "RECT";
 constexpr char kDetectionTag[] = "DETECTION";
+
+using ::mediapipe::NormalizedRect;
+using ::mediapipe::Rect;
 
 MATCHER_P4(RectEq, x_center, y_center, width, height, "") {
   return testing::Value(arg.x_center(), testing::Eq(x_center)) &&

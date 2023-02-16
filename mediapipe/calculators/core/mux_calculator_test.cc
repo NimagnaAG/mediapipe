@@ -14,7 +14,11 @@
 
 #include <memory>
 
+#include "absl/status/status.h"
+#include "absl/types/optional.h"
 #include "mediapipe/calculators/core/split_vector_calculator.h"
+#include "mediapipe/framework/api2/node.h"
+#include "mediapipe/framework/api2/port.h"
 #include "mediapipe/framework/calculator_framework.h"
 #include "mediapipe/framework/calculator_runner.h"
 #include "mediapipe/framework/port/gtest.h"
@@ -301,4 +305,188 @@ TEST(MuxCalculatorTest, DiscardSkippedInputs_MuxInputStreamHandler) {
 }
 
 }  // namespace
+
+class PassThroughAndTsBoundUpdateNode : public mediapipe::api2::Node {
+ public:
+  static constexpr mediapipe::api2::Input<int> kInValue{"VALUE"};
+  static constexpr mediapipe::api2::Output<int> kOutValue{"VALUE"};
+  static constexpr mediapipe::api2::Output<int> kOutTsBoundUpdate{
+      "TS_BOUND_UPDATE"};
+  MEDIAPIPE_NODE_CONTRACT(kInValue, kOutValue, kOutTsBoundUpdate);
+
+  absl::Status Process(CalculatorContext* cc) override {
+    kOutValue(cc).Send(kInValue(cc));
+    kOutTsBoundUpdate(cc).SetNextTimestampBound(
+        cc->InputTimestamp().NextAllowedInStream());
+    return absl::OkStatus();
+  }
+};
+MEDIAPIPE_REGISTER_NODE(PassThroughAndTsBoundUpdateNode);
+
+class ToOptionalNode : public mediapipe::api2::Node {
+ public:
+  static constexpr mediapipe::api2::Input<int> kTick{"TICK"};
+  static constexpr mediapipe::api2::Input<int> kInValue{"VALUE"};
+  static constexpr mediapipe::api2::Output<absl::optional<int>> kOutValue{
+      "OUTPUT"};
+  MEDIAPIPE_NODE_CONTRACT(kTick, kInValue, kOutValue);
+
+  absl::Status Process(CalculatorContext* cc) override {
+    if (kInValue(cc).IsEmpty()) {
+      kOutValue(cc).Send(absl::nullopt);
+    } else {
+      kOutValue(cc).Send({kInValue(cc).Get()});
+    }
+    return absl::OkStatus();
+  }
+};
+MEDIAPIPE_REGISTER_NODE(ToOptionalNode);
+
+namespace {
+
+TEST(MuxCalculatorTest, HandleTimestampBoundUpdates) {
+  CalculatorGraphConfig config =
+      mediapipe::ParseTextProtoOrDie<CalculatorGraphConfig>(
+          R"pb(
+            input_stream: "select"
+            node {
+              calculator: "PassThroughAndTsBoundUpdateNode"
+              input_stream: "VALUE:select"
+              output_stream: "VALUE:select_ps"
+              output_stream: "TS_BOUND_UPDATE:ts_bound_update"
+            }
+            node {
+              calculator: "MuxCalculator"
+              input_stream: "INPUT:0:select_ps"
+              input_stream: "INPUT:1:ts_bound_update"
+              input_stream: "SELECT:select"
+              output_stream: "OUTPUT:select_or_ts_bound_update"
+            }
+            node {
+              calculator: "ToOptionalNode"
+              input_stream: "TICK:select"
+              input_stream: "VALUE:select_or_ts_bound_update"
+              output_stream: "OUTPUT:output"
+            }
+          )pb");
+  std::vector<Packet> output_packets;
+  tool::AddVectorSink("output", &config, &output_packets);
+
+  CalculatorGraph graph;
+  MP_ASSERT_OK(graph.Initialize(config));
+  MP_ASSERT_OK(graph.StartRun({}));
+
+  auto send_value_fn = [&](int value, Timestamp ts) -> absl::Status {
+    MP_RETURN_IF_ERROR(
+        graph.AddPacketToInputStream("select", MakePacket<int>(value).At(ts)));
+    return graph.WaitUntilIdle();
+  };
+
+  MP_ASSERT_OK(send_value_fn(0, Timestamp(1)));
+  ASSERT_EQ(output_packets.size(), 1);
+  EXPECT_EQ(output_packets[0].Get<absl::optional<int>>(), 0);
+
+  MP_ASSERT_OK(send_value_fn(1, Timestamp(2)));
+  ASSERT_EQ(output_packets.size(), 2);
+  EXPECT_EQ(output_packets[1].Get<absl::optional<int>>(), absl::nullopt);
+
+  MP_ASSERT_OK(send_value_fn(0, Timestamp(3)));
+  ASSERT_EQ(output_packets.size(), 3);
+  EXPECT_EQ(output_packets[2].Get<absl::optional<int>>(), 0);
+
+  MP_ASSERT_OK(graph.CloseAllInputStreams());
+  MP_ASSERT_OK(graph.WaitUntilDone());
+}
+
+TEST(MuxCalculatorTest, HandlesCloseGracefully) {
+  CalculatorGraphConfig config =
+      mediapipe::ParseTextProtoOrDie<CalculatorGraphConfig>(
+          R"pb(
+            input_stream: "select"
+            input_stream: "value_0"
+            input_stream: "value_1"
+            node {
+              calculator: "MuxCalculator"
+              input_stream: "SELECT:select"
+              input_stream: "INPUT:0:value_0"
+              input_stream: "INPUT:1:value_1"
+              output_stream: "OUTPUT:output"
+            }
+          )pb");
+  CalculatorGraph graph;
+  MP_ASSERT_OK(graph.Initialize(config));
+
+  // Observe packets.
+  std::vector<Packet> output_packets;
+  MP_ASSERT_OK(graph.ObserveOutputStream(
+      "output",
+      [&output_packets](const Packet& p) -> absl::Status {
+        output_packets.push_back(p);
+        return absl::OkStatus();
+      },
+      /*observe_timestamp_bounds=*/true));
+
+  // Start graph.
+  MP_ASSERT_OK(graph.StartRun({}));
+
+  // Add single packet wait for completion and close.
+  MP_ASSERT_OK(graph.AddPacketToInputStream(
+      "value_0", MakePacket<int>(0).At(Timestamp(1000))));
+  MP_ASSERT_OK(graph.WaitUntilIdle());
+  MP_ASSERT_OK(graph.CloseAllInputStreams());
+  MP_ASSERT_OK(graph.WaitUntilDone());
+
+  EXPECT_TRUE(output_packets.empty());
+}
+
+TEST(MuxCalculatorTest, HandlesCloseGracefullyWithDeafultInputStreamHandler) {
+  CalculatorGraphConfig config =
+      mediapipe::ParseTextProtoOrDie<CalculatorGraphConfig>(
+          R"pb(
+            # This is required in order for EXPECT_DEATH to work everywhere
+            executor { name: "" type: "ApplicationThreadExecutor" }
+
+            input_stream: "select"
+            input_stream: "value_0"
+            input_stream: "value_1"
+            node {
+              calculator: "MuxCalculator"
+              input_stream: "SELECT:select"
+              input_stream: "INPUT:0:value_0"
+              input_stream: "INPUT:1:value_1"
+              output_stream: "OUTPUT:output"
+              input_stream_handler {
+                input_stream_handler: "DefaultInputStreamHandler"
+              }
+            }
+          )pb");
+  CalculatorGraph graph;
+  MP_ASSERT_OK(graph.Initialize(config));
+
+  // Observe packets.
+  std::vector<Packet> output_packets;
+  MP_ASSERT_OK(graph.ObserveOutputStream(
+      "output",
+      [&output_packets](const Packet& p) -> absl::Status {
+        output_packets.push_back(p);
+        return absl::OkStatus();
+      },
+      /*observe_timestamp_bounds=*/true));
+
+  // Start graph.
+  MP_ASSERT_OK(graph.StartRun({}));
+
+  // Add single packet wait for completion and close.
+  MP_ASSERT_OK(graph.AddPacketToInputStream(
+      "value_0", MakePacket<int>(0).At(Timestamp(1000))));
+  MP_ASSERT_OK(graph.WaitUntilIdle());
+  MP_ASSERT_OK(graph.CloseAllInputStreams());
+  MP_ASSERT_OK(graph.WaitUntilDone());
+
+  ASSERT_EQ(output_packets.size(), 1);
+  EXPECT_TRUE(output_packets[0].IsEmpty());
+}
+
+}  // namespace
+
 }  // namespace mediapipe

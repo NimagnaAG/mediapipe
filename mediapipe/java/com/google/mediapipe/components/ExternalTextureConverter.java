@@ -104,6 +104,57 @@ public class ExternalTextureConverter implements TextureFrameProducer {
   }
 
   /**
+   * Re-renders the current frame. Notifies all consumers as if it were a new frame. This should not
+   * typically be used but can be useful for cases where the consumer has lost ownership of the most
+   * recent frame and needs to get it again. This does nothing if no frame has yet been received.
+   */
+  public void rerenderCurrentFrame() {
+    SurfaceTexture surfaceTexture = getSurfaceTexture();
+    if (thread != null && surfaceTexture != null && thread.getHasReceivedFirstFrame()) {
+      thread.onFrameAvailable(surfaceTexture);
+    }
+  }
+
+  /**
+   * Sets the new buffer pool size. This is safe to set at any time.
+   *
+   * This doesn't adjust the buffer pool right way. Instead, it behaves as follows:
+   *
+   * If the new size is smaller: Excess frames in pool are not de-allocated, but rather when frames
+   * are released, they wouldn't be added back to the pool until size restriction is met.
+   *
+   * If the new size is greater: New frames won't be created immediately. ETC anyway creates new
+   * frames when all frames in the pool are in-use, but they are only added back to the pool upon
+   * release if the size allows so.
+   *
+   * Please note, while this property allows the buffer pool to grow temporarily if needed, there is
+   * a different bufferPoolMaxSize properly that strictly enforces buffer pool doesn't grow beyond
+   * size and incoming frames are dropped.
+   *
+   * @param bufferPoolSize the number of camera frames that can enter processing simultaneously.
+   */
+  public void setBufferPoolSize(int bufferPoolSize) {
+    thread.setBufferPoolSize(bufferPoolSize);
+  }
+
+  /**
+   * Sets the buffer pool max size. Setting to <= 0 effectively clears this property.
+   *
+   * If set (i.e. > 0), the value should be >= bufferPoolSize. While the API allows for setting a
+   * value lower without throwing an exception, internally the higher of the 2 values is used for
+   * enforcing buffer pool max size.
+   *
+   * When set, no TextureFrames are created beyond the specified size. New incoming
+   * frames will be dropped.
+   *
+   * When un-set (i.e. <= 0), new TextureFrames are temporarily allocated even bufferPoolSize is
+   * reached. However, they are not added back to the buffer pool upon release.
+   */
+  public void setBufferPoolMaxSize(int bufferPoolMaxSize) {
+    thread.setBufferPoolMaxSize(bufferPoolMaxSize);
+  }
+
+  /**
    * Sets vertical flipping of the texture, useful for conversion between coordinate systems with
    * top-left v.s. bottom-left origins. This should be called before {@link
    * #setSurfaceTexture(SurfaceTexture, int, int)} or {@link
@@ -121,6 +172,14 @@ public class ExternalTextureConverter implements TextureFrameProducer {
    */
   public void setRotation(int rotation) {
     thread.setRotation(rotation);
+  }
+
+  /**
+   * Sets whether the timestamps of each frame should be adjusted to be always monotonically
+   * increasing. The default behavior is that this is {@code true}.
+   */
+  public void setShouldAdjustTimestamps(boolean shouldAdjustTimestamps) {
+    thread.setShouldAdjustTimestamps(shouldAdjustTimestamps);
   }
 
   /**
@@ -239,12 +298,15 @@ public class ExternalTextureConverter implements TextureFrameProducer {
     private volatile SurfaceTexture internalSurfaceTexture = null;
     private int[] textures = null;
     private final List<TextureFrameConsumer> consumers;
+    private volatile boolean hasReceivedFirstFrame = false;
 
     private final Queue<PoolTextureFrame> framesAvailable = new ArrayDeque<>();
     private int framesInUse = 0;
-    private final int framesToKeep;
+    private int bufferPoolSize;
+    private int bufferPoolMaxSize;
 
     private ExternalTextureRenderer renderer = null;
+    private boolean shouldAdjustTimestamps = true;
     private long nextFrameTimestampOffset = 0;
     private long timestampOffsetNanos = 0;
     private long previousTimestamp = 0;
@@ -273,9 +335,17 @@ public class ExternalTextureConverter implements TextureFrameProducer {
 
     public RenderThread(EGLContext parentContext, int numBuffers) {
       super(parentContext);
-      framesToKeep = numBuffers;
+      bufferPoolSize = numBuffers;
       renderer = new ExternalTextureRenderer();
       consumers = new ArrayList<>();
+    }
+
+    public void setBufferPoolSize(int bufferPoolSize) {
+      this.bufferPoolSize = bufferPoolSize;
+    }
+
+    public void setBufferPoolMaxSize(int bufferPoolMaxSize) {
+      this.bufferPoolMaxSize = bufferPoolMaxSize;
     }
 
     public void setFlipY(boolean flip) {
@@ -287,6 +357,7 @@ public class ExternalTextureConverter implements TextureFrameProducer {
     }
 
     public void setSurfaceTexture(SurfaceTexture texture, int width, int height) {
+      hasReceivedFirstFrame = false;
       if (surfaceTexture != null) {
         surfaceTexture.setOnFrameAvailableListener(null);
       }
@@ -333,6 +404,10 @@ public class ExternalTextureConverter implements TextureFrameProducer {
       return surfaceTexture != null ? surfaceTexture : internalSurfaceTexture;
     }
 
+    public boolean getHasReceivedFirstFrame() {
+      return hasReceivedFirstFrame;
+    }
+
     @Override
     public void onFrameAvailable(SurfaceTexture surfaceTexture) {
       handler.post(() -> renderNext(surfaceTexture));
@@ -367,6 +442,10 @@ public class ExternalTextureConverter implements TextureFrameProducer {
       super.releaseGl(); // This releases the EGL context, so must do it after any GL calls.
     }
 
+    public void setShouldAdjustTimestamps(boolean shouldAdjustTimestamps) {
+      this.shouldAdjustTimestamps = shouldAdjustTimestamps;
+    }
+
     public void setTimestampOffsetNanos(long offsetInNanos) {
       timestampOffsetNanos = offsetInNanos;
     }
@@ -379,16 +458,19 @@ public class ExternalTextureConverter implements TextureFrameProducer {
         // pending on the handler. When that happens, we should simply disregard the call.
         return;
       }
+      hasReceivedFirstFrame = true;
       try {
         synchronized (consumers) {
           boolean frameUpdated = false;
           for (TextureFrameConsumer consumer : consumers) {
             AppTextureFrame outputFrame = nextOutputFrame();
+            if (outputFrame == null) {
+              break;
+            }
             // TODO: Switch to ref-counted single copy instead of making additional
             // copies blitting to separate textures each time.
             updateOutputFrame(outputFrame);
             frameUpdated = true;
-
             if (consumer != null) {
               if (Log.isLoggable(TAG, Log.VERBOSE)) {
                 Log.v(
@@ -403,11 +485,10 @@ public class ExternalTextureConverter implements TextureFrameProducer {
               consumer.onNewFrame(outputFrame);
             }
           }
-          if (!frameUpdated) { // Need to update the frame even if there are no consumers.
-            AppTextureFrame outputFrame = nextOutputFrame();
-            // TODO: Switch to ref-counted single copy instead of making additional
-            // copies blitting to separate textures each time.
-            updateOutputFrame(outputFrame);
+          if (!frameUpdated) {
+            // Progress the SurfaceTexture BufferQueue even if we didn't update the outputFrame,
+            // which could be either because there are no consumers or bufferPoolMaxSize is reached.
+            surfaceTexture.updateTexImage();
           }
         }
       } finally {
@@ -444,6 +525,13 @@ public class ExternalTextureConverter implements TextureFrameProducer {
       PoolTextureFrame outputFrame;
       synchronized (this) {
         outputFrame = framesAvailable.poll();
+        // Don't create new frame if bufferPoolMaxSize is set (i.e. > 0) and reached.
+        if (outputFrame == null && bufferPoolMaxSize > 0
+                && framesInUse >= max(bufferPoolMaxSize, bufferPoolSize)) {
+          Log.d(TAG, "Enforcing buffer pool max Size. FramesInUse: "
+                  + framesInUse + " >= " + bufferPoolMaxSize);
+          return null;
+        }
         framesInUse++;
       }
       if (outputFrame == null) {
@@ -467,7 +555,7 @@ public class ExternalTextureConverter implements TextureFrameProducer {
     protected synchronized void poolFrameReleased(PoolTextureFrame frame) {
       framesAvailable.offer(frame);
       framesInUse--;
-      int keep = max(framesToKeep - framesInUse, 0);
+      int keep = max(bufferPoolSize - framesInUse, 0);
       while (framesAvailable.size() > keep) {
         PoolTextureFrame textureFrameToRemove = framesAvailable.remove();
         handler.post(() -> teardownFrame(textureFrameToRemove));
@@ -490,7 +578,8 @@ public class ExternalTextureConverter implements TextureFrameProducer {
       // |nextFrameTimestampOffset| to ensure that timestamps increase monotonically.)
       long textureTimestamp =
           (surfaceTexture.getTimestamp() + timestampOffsetNanos) / NANOS_PER_MICRO;
-      if (previousTimestampValid
+      if (shouldAdjustTimestamps
+          && previousTimestampValid
           && textureTimestamp + nextFrameTimestampOffset <= previousTimestamp) {
         nextFrameTimestampOffset = previousTimestamp + 1 - textureTimestamp;
       }

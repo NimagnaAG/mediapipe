@@ -38,7 +38,7 @@ hand perception functionality to the wider research and development community
 will result in an emergence of creative use cases, stimulating new applications
 and new research avenues.
 
-![hand_tracking_3d_android_gpu.gif](../images/mobile/hand_tracking_3d_android_gpu.gif) |
+![hand_tracking_3d_android_gpu.gif](https://mediapipe.dev/images/mobile/hand_tracking_3d_android_gpu.gif) |
 :------------------------------------------------------------------------------------: |
 *Fig 1. Tracked 3D hand landmarks are represented by dots in different shades, with the brighter ones denoting landmarks closer to the camera.* |
 
@@ -91,8 +91,10 @@ To detect initial hand locations, we designed a
 mobile real-time uses in a manner similar to the face detection model in
 [MediaPipe Face Mesh](./face_mesh.md). Detecting hands is a decidedly complex
 task: our
-[model](https://github.com/google/mediapipe/tree/master/mediapipe/modules/palm_detection/palm_detection.tflite)
-has to work across a variety of hand sizes with a large scale span (~20x)
+[lite model](https://storage.googleapis.com/mediapipe-assets/palm_detection_lite.tflite)
+and
+[full model](https://storage.googleapis.com/mediapipe-assets/palm_detection_full.tflite)
+have to work across a variety of hand sizes with a large scale span (~20x)
 relative to the image frame and be able to detect occluded and self-occluded
 hands. Whereas faces have high contrast patterns, e.g., in the eye and mouth
 region, the lack of such features in hands makes it comparatively difficult to
@@ -120,7 +122,7 @@ just 86.22%.
 ### Hand Landmark Model
 
 After the palm detection over the whole image our subsequent hand landmark
-[model](https://github.com/google/mediapipe/tree/master/mediapipe/modules/hand_landmark/hand_landmark.tflite)
+[model](https://storage.googleapis.com/mediapipe-assets/hand_landmark_full.tflite)
 performs precise keypoint localization of 21 3D hand-knuckle coordinates inside
 the detected hand regions via regression, that is direct coordinate prediction.
 The model learns a consistent internal hand pose representation and is robust
@@ -133,11 +135,11 @@ and provide additional supervision on the nature of hand geometry, we also
 render a high-quality synthetic hand model over various backgrounds and map it
 to the corresponding 3D coordinates.
 
-![hand_landmarks.png](../images/mobile/hand_landmarks.png) |
+![hand_landmarks.png](https://mediapipe.dev/images/mobile/hand_landmarks.png) |
 :--------------------------------------------------------: |
 *Fig 2. 21 hand landmarks.*                                |
 
-![hand_crops.png](../images/mobile/hand_crops.png)                          |
+![hand_crops.png](https://mediapipe.dev/images/mobile/hand_crops.png)                          |
 :-------------------------------------------------------------------------: |
 *Fig 3. Top: Aligned hand crops passed to the tracking network with ground truth annotation. Bottom: Rendered synthetic hand images with ground truth annotation.* |
 
@@ -162,6 +164,11 @@ unrelated, images. Default to `false`.
 #### max_num_hands
 
 Maximum number of hands to detect. Default to `2`.
+
+#### model_complexity
+
+Complexity of the hand landmark model: `0` or `1`. Landmark accuracy as well as
+inference latency generally go up with the model complexity. Default to `1`.
 
 #### min_detection_confidence
 
@@ -190,6 +197,13 @@ of 21 hand landmarks and each landmark is composed of `x`, `y` and `z`. `x` and
 and the smaller the value the closer the landmark is to the camera. The
 magnitude of `z` uses roughly the same scale as `x`.
 
+#### multi_hand_world_landmarks
+
+Collection of detected/tracked hands, where each hand is represented as a list
+of 21 hand landmarks in world coordinates. Each landmark is composed of `x`, `y`
+and `z`: real-world 3D coordinates in meters with the origin at the hand's
+approximate geometric center.
+
 #### multi_handedness
 
 Collection of handedness of the detected/tracked hands (i.e. is it a left or
@@ -212,6 +226,7 @@ Supported configuration options:
 
 *   [static_image_mode](#static_image_mode)
 *   [max_num_hands](#max_num_hands)
+*   [model_complexity](#model_complexity)
 *   [min_detection_confidence](#min_detection_confidence)
 *   [min_tracking_confidence](#min_tracking_confidence)
 
@@ -256,10 +271,17 @@ with mp_hands.Hands(
           mp_drawing_styles.get_default_hand_connections_style())
     cv2.imwrite(
         '/tmp/annotated_image' + str(idx) + '.png', cv2.flip(annotated_image, 1))
+    # Draw hand world landmarks.
+    if not results.multi_hand_world_landmarks:
+      continue
+    for hand_world_landmarks in results.multi_hand_world_landmarks:
+      mp_drawing.plot_landmarks(
+        hand_world_landmarks, mp_hands.HAND_CONNECTIONS, azimuth=5)
 
 # For webcam input:
 cap = cv2.VideoCapture(0)
 with mp_hands.Hands(
+    model_complexity=0,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5) as hands:
   while cap.isOpened():
@@ -302,6 +324,7 @@ and a [fun application], and the following usage example.
 Supported configuration options:
 
 *   [maxNumHands](#max_num_hands)
+*   [modelComplexity](#model_complexity)
 *   [minDetectionConfidence](#min_detection_confidence)
 *   [minTrackingConfidence](#min_tracking_confidence)
 
@@ -351,6 +374,7 @@ const hands = new Hands({locateFile: (file) => {
 }});
 hands.setOptions({
   maxNumHands: 2,
+  modelComplexity: 1,
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });
@@ -370,13 +394,10 @@ camera.start();
 ### Android Solution API
 
 Please first follow general
-[instructions](../getting_started/android_solutions.md#integrate-mediapipe-android-solutions-api)
-to add MediaPipe Gradle dependencies, then try the Hands Solution API in the
-companion
-[example Android Studio project](https://github.com/google/mediapipe/tree/master/mediapipe/examples/android/solutions/hands)
-following
-[these instructions](../getting_started/android_solutions.md#build-solution-example-apps-in-android-studio)
-and learn more in usage example below.
+[instructions](../getting_started/android_solutions.md) to add MediaPipe Gradle
+dependencies and try the Android Solution API in the companion
+[example Android Studio project](https://github.com/google/mediapipe/tree/master/mediapipe/examples/android/solutions/hands),
+and learn more in the usage example below.
 
 Supported configuration options:
 
@@ -391,7 +412,7 @@ Supported configuration options:
 HandsOptions handsOptions =
     HandsOptions.builder()
         .setStaticImageMode(false)
-        .setMaxNumHands(1)
+        .setMaxNumHands(2)
         .setRunOnGpu(true).build();
 Hands hands = new Hands(this, handsOptions);
 hands.setErrorListener(
@@ -414,8 +435,11 @@ glSurfaceView.setRenderInputImage(true);
 
 hands.setResultListener(
     handsResult -> {
-      NormalizedLandmark wristLandmark = Hands.getHandLandmark(
-          handsResult, 0, HandLandmark.WRIST);
+      if (result.multiHandLandmarks().isEmpty()) {
+        return;
+      }
+      NormalizedLandmark wristLandmark =
+          handsResult.multiHandLandmarks().get(0).getLandmarkList().get(HandLandmark.WRIST);
       Log.i(
           TAG,
           String.format(
@@ -444,7 +468,7 @@ glSurfaceView.post(
 HandsOptions handsOptions =
     HandsOptions.builder()
         .setStaticImageMode(true)
-        .setMaxNumHands(1)
+        .setMaxNumHands(2)
         .setRunOnGpu(true).build();
 Hands hands = new Hands(this, handsOptions);
 
@@ -455,10 +479,13 @@ Hands hands = new Hands(this, handsOptions);
 HandsResultImageView imageView = new HandsResultImageView(this);
 hands.setResultListener(
     handsResult -> {
+      if (result.multiHandLandmarks().isEmpty()) {
+        return;
+      }
       int width = handsResult.inputBitmap().getWidth();
       int height = handsResult.inputBitmap().getHeight();
-      NormalizedLandmark wristLandmark = Hands.getHandLandmark(
-          handsResult, 0, HandLandmark.WRIST);
+      NormalizedLandmark wristLandmark =
+          handsResult.multiHandLandmarks().get(0).getLandmarkList().get(HandLandmark.WRIST);
       Log.i(
           TAG,
           String.format(
@@ -492,9 +519,9 @@ ActivityResultLauncher<Intent> imageGetter =
             }
           }
         });
-Intent gallery = new Intent(
-    Intent.ACTION_PICK, MediaStore.Images.Media.INTERNAL_CONTENT_URI);
-imageGetter.launch(gallery);
+Intent pickImageIntent = new Intent(Intent.ACTION_PICK);
+pickImageIntent.setDataAndType(MediaStore.Images.Media.INTERNAL_CONTENT_URI, "image/*");
+imageGetter.launch(pickImageIntent);
 ```
 
 #### Video Input
@@ -504,7 +531,7 @@ imageGetter.launch(gallery);
 HandsOptions handsOptions =
     HandsOptions.builder()
         .setStaticImageMode(false)
-        .setMaxNumHands(1)
+        .setMaxNumHands(2)
         .setRunOnGpu(true).build();
 Hands hands = new Hands(this, handsOptions);
 hands.setErrorListener(
@@ -527,8 +554,11 @@ glSurfaceView.setRenderInputImage(true);
 
 hands.setResultListener(
     handsResult -> {
-      NormalizedLandmark wristLandmark = Hands.getHandLandmark(
-          handsResult, 0, HandLandmark.WRIST);
+      if (result.multiHandLandmarks().isEmpty()) {
+        return;
+      }
+      NormalizedLandmark wristLandmark =
+          handsResult.multiHandLandmarks().get(0).getLandmarkList().get(HandLandmark.WRIST);
       Log.i(
           TAG,
           String.format(
@@ -557,9 +587,9 @@ ActivityResultLauncher<Intent> videoGetter =
             }
           }
         });
-Intent gallery =
-    new Intent(Intent.ACTION_PICK, MediaStore.Video.Media.INTERNAL_CONTENT_URI);
-videoGetter.launch(gallery);
+Intent pickVideoIntent = new Intent(Intent.ACTION_PICK);
+pickVideoIntent.setDataAndType(MediaStore.Video.Media.INTERNAL_CONTENT_URI, "video/*");
+videoGetter.launch(pickVideoIntent);
 ```
 
 ## Example Apps

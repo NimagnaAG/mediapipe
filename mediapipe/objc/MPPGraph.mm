@@ -24,7 +24,6 @@
 #include "mediapipe/framework/formats/image.h"
 #include "mediapipe/framework/formats/image_frame.h"
 #include "mediapipe/framework/graph_service.h"
-#include "mediapipe/gpu/MPPGraphGPUData.h"
 #include "mediapipe/gpu/gl_base.h"
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "mediapipe/objc/util.h"
@@ -134,12 +133,12 @@ void CallFrameDelegate(void* wrapperVoid, const std::string& streamName,
         if (format == mediapipe::ImageFormat::SRGBA) {
           // Swap R and B channels.
           const uint8_t permuteMap[4] = {2, 1, 0, 3};
-          vImage_Error vError = vImagePermuteChannels_ARGB8888(
-              &vSource, &vDestination, permuteMap, kvImageNoFlags);
+          vImage_Error __unused vError =
+              vImagePermuteChannels_ARGB8888(&vSource, &vDestination, permuteMap, kvImageNoFlags);
           _GTMDevAssert(vError == kvImageNoError, @"vImagePermuteChannels failed: %zd", vError);
         } else {
           // Convert grayscale back to BGRA
-          vImage_Error vError = vImageGrayToBGRA(&vSource, &vDestination);
+          vImage_Error __unused vError = vImageGrayToBGRA(&vSource, &vDestination);
           _GTMDevAssert(vError == kvImageNoError, @"vImageGrayToBGRA failed: %zd", vError);
         }
 
@@ -169,7 +168,7 @@ void CallFrameDelegate(void* wrapperVoid, const std::string& streamName,
       wrapper->_framesInFlight--;
       CVPixelBufferRef pixelBuffer;
       if (packetType == MPPPacketTypePixelBuffer)
-        pixelBuffer = packet.Get<mediapipe::GpuBuffer>().GetCVPixelBufferRef();
+        pixelBuffer = mediapipe::GetCVPixelBufferRef(packet.Get<mediapipe::GpuBuffer>());
       else
         pixelBuffer = packet.Get<mediapipe::Image>().GetCVPixelBufferRef();
 if ([wrapper.delegate
@@ -231,15 +230,16 @@ if ([wrapper.delegate
 }
 
 - (absl::Status)performStart {
-  absl::Status status = _graph->Initialize(_config);
-  if (!status.ok()) {
-    return status;
-  }
+  absl::Status status;
   for (const auto& service_packet : _servicePackets) {
     status = _graph->SetServicePacket(*service_packet.first, service_packet.second);
     if (!status.ok()) {
       return status;
     }
+  }
+  status = _graph->Initialize(_config);
+  if (!status.ok()) {
+    return status;
   }
   status = _graph->StartRun(_inputSidePackets, _streamHeaders);
   if (!status.ok()) {

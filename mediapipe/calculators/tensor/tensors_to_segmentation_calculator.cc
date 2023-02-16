@@ -20,10 +20,8 @@
 #include "mediapipe/framework/calculator_context.h"
 #include "mediapipe/framework/calculator_framework.h"
 #include "mediapipe/framework/formats/image.h"
-#include "mediapipe/framework/formats/image_opencv.h"
 #include "mediapipe/framework/formats/tensor.h"
 #include "mediapipe/framework/port.h"
-#include "mediapipe/framework/port/opencv_imgproc_inc.h"
 #include "mediapipe/framework/port/ret_check.h"
 #include "mediapipe/framework/port/statusor.h"
 #include "mediapipe/gpu/gpu_origin.pb.h"
@@ -36,6 +34,11 @@
 #include "mediapipe/gpu/gpu_buffer.h"
 #include "mediapipe/gpu/shader_util.h"
 #endif  // !MEDIAPIPE_DISABLE_GPU
+
+#if !MEDIAPIPE_DISABLE_OPENCV
+#include "mediapipe/framework/formats/image_opencv.h"
+#include "mediapipe/framework/port/opencv_imgproc_inc.h"
+#endif  // !MEDIAPIPE_DISABLE_OPENCV
 
 #if MEDIAPIPE_OPENGL_ES_VERSION >= MEDIAPIPE_OPENGL_ES_31
 #include "tensorflow/lite/delegates/gpu/gl/converters/util.h"
@@ -50,6 +53,7 @@
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 
+#include "mediapipe/framework/formats/tensor_mtl_buffer_view.h"
 #import "mediapipe/gpu/MPPMetalHelper.h"
 #include "mediapipe/gpu/MPPMetalUtil.h"
 #endif  // MEDIAPIPE_METAL_ENABLED
@@ -113,8 +117,9 @@ using ::tflite::gpu::gl::GlShader;
 //
 // Inputs:
 //   One of the following TENSORS tags:
-//   TENSORS: Vector of Tensor,
-//            The tensor dimensions are specified in this calculator's options.
+//   TENSORS: Vector of Tensors of type kFloat32. Only the first tensor will be
+//            used. The tensor dimensions are specified in this calculator's
+//            options.
 //   OUTPUT_SIZE(optional): std::pair<int, int>,
 //                          If provided, the size to upscale mask to.
 //
@@ -159,9 +164,10 @@ class TensorsToSegmentationCalculator : public CalculatorBase {
     return options_.gpu_origin() != mediapipe::GpuOrigin_Mode_TOP_LEFT;
   }
 
+#if !MEDIAPIPE_DISABLE_OPENCV
   template <class T>
   absl::Status ApplyActivation(cv::Mat& tensor_mat, cv::Mat* small_mask_mat);
-
+#endif  // !MEDIAPIPE_DISABLE_OPENCV
   ::mediapipe::TensorsToSegmentationCalculatorOptions options_;
 
 #if !MEDIAPIPE_DISABLE_GPU
@@ -257,6 +263,7 @@ absl::Status TensorsToSegmentationCalculator::Process(CalculatorContext* cc) {
   // Validate tensor channels and activation type.
   {
     RET_CHECK(!input_tensors.empty());
+    RET_CHECK(input_tensors[0].element_type() == Tensor::ElementType::kFloat32);
     ASSIGN_OR_RETURN(auto hwc, GetHwcFromDims(input_tensors[0].shape().dims));
     int tensor_channels = std::get<2>(hwc);
     typedef mediapipe::TensorsToSegmentationCalculatorOptions Options;
@@ -283,7 +290,11 @@ absl::Status TensorsToSegmentationCalculator::Process(CalculatorContext* cc) {
     RET_CHECK_FAIL() << "GPU processing disabled.";
 #endif  // !MEDIAPIPE_DISABLE_GPU
   } else {
+#if !MEDIAPIPE_DISABLE_OPENCV
     MP_RETURN_IF_ERROR(ProcessCpu(cc));
+#else
+    RET_CHECK_FAIL() << "OpenCV processing disabled.";
+#endif  // !MEDIAPIPE_DISABLE_OPENCV
   }
 
   return absl::OkStatus();
@@ -311,6 +322,7 @@ absl::Status TensorsToSegmentationCalculator::Close(CalculatorContext* cc) {
 
 absl::Status TensorsToSegmentationCalculator::ProcessCpu(
     CalculatorContext* cc) {
+#if !MEDIAPIPE_DISABLE_OPENCV
   // Get input streams, and dimensions.
   const auto& input_tensors =
       cc->Inputs().Tag(kTensorsTag).Get<std::vector<Tensor>>();
@@ -355,14 +367,17 @@ absl::Status TensorsToSegmentationCalculator::ProcessCpu(
   std::shared_ptr<ImageFrame> mask_frame = std::make_shared<ImageFrame>(
       ImageFormat::VEC32F1, output_width, output_height);
   std::unique_ptr<Image> output_mask = absl::make_unique<Image>(mask_frame);
-  cv::Mat output_mat = formats::MatView(output_mask.get());
+  auto output_mat = formats::MatView(output_mask.get());
   // Upsample small mask into output.
-  cv::resize(small_mask_mat, output_mat, cv::Size(output_width, output_height));
+  cv::resize(small_mask_mat, *output_mat,
+             cv::Size(output_width, output_height));
   cc->Outputs().Tag(kMaskTag).Add(output_mask.release(), cc->InputTimestamp());
+#endif  // !MEDIAPIPE_DISABLE_OPENCV
 
   return absl::OkStatus();
 }
 
+#if !MEDIAPIPE_DISABLE_OPENCV
 template <class T>
 absl::Status TensorsToSegmentationCalculator::ApplyActivation(
     cv::Mat& tensor_mat, cv::Mat* small_mask_mat) {
@@ -410,6 +425,7 @@ absl::Status TensorsToSegmentationCalculator::ApplyActivation(
 
   return absl::OkStatus();
 }
+#endif  // !MEDIAPIPE_DISABLE_OPENCV
 
 // Steps:
 // 1. receive tensor
@@ -470,7 +486,8 @@ absl::Status TensorsToSegmentationCalculator::ProcessGpu(
         [command_buffer computeCommandEncoder];
     [command_encoder setComputePipelineState:mask_program_];
 
-    auto read_view = input_tensors[0].GetMtlBufferReadView(command_buffer);
+    auto read_view =
+        MtlBufferView::GetReadView(input_tensors[0], command_buffer);
     [command_encoder setBuffer:read_view.buffer() offset:0 atIndex:0];
 
     mediapipe::GpuBuffer small_mask_buffer = [metal_helper_

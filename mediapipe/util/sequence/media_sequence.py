@@ -166,6 +166,8 @@ _HAS_DYNAMIC_ATTRIBUTES = True
 EXAMPLE_ID_KEY = "example/id"
 # The name o fthe data set, including the version.
 EXAMPLE_DATASET_NAME_KEY = "example/dataset_name"
+# String flags or attributes for this example within a data set.
+EXAMPLE_DATASET_FLAG_STRING_KEY = "example/dataset/flag/string"
 # The relative path to the data on disk from some root directory.
 CLIP_DATA_PATH_KEY = "clip/data_path"
 # Any identifier for the media beyond the data path.
@@ -186,10 +188,17 @@ CLIP_LABEL_INDEX_KEY = "clip/label/index"
 CLIP_LABEL_STRING_KEY = "clip/label/string"
 # A list of label confidences for this clip.
 CLIP_LABEL_CONFIDENCE_KEY = "clip/label/confidence"
+# A list of label start timestamps for this clip.
+CLIP_LABEL_START_TIMESTAMP_KEY = "clip/label/start/timestamp"
+# A list of label end timestamps for this clip.
+CLIP_LABEL_END_TIMESTAMP_KEY = "clip/label/end/timestamp"
 msu.create_bytes_context_feature(
     "example_id", EXAMPLE_ID_KEY, module_dict=globals())
 msu.create_bytes_context_feature(
     "example_dataset_name", EXAMPLE_DATASET_NAME_KEY, module_dict=globals())
+msu.create_bytes_list_context_feature(
+    "example_dataset_flag_string", EXAMPLE_DATASET_FLAG_STRING_KEY,
+    module_dict=globals())
 msu.create_bytes_context_feature(
     "clip_media_id", CLIP_MEDIA_ID_KEY, module_dict=globals())
 msu.create_bytes_context_feature(
@@ -213,6 +222,14 @@ msu.create_int_list_context_feature(
     "clip_label_index", CLIP_LABEL_INDEX_KEY, module_dict=globals())
 msu.create_float_list_context_feature(
     "clip_label_confidence", CLIP_LABEL_CONFIDENCE_KEY, module_dict=globals())
+msu.create_int_list_context_feature(
+    "clip_label_start_timestamp",
+    CLIP_LABEL_START_TIMESTAMP_KEY,
+    module_dict=globals())
+msu.create_int_list_context_feature(
+    "clip_label_end_timestamp",
+    CLIP_LABEL_END_TIMESTAMP_KEY,
+    module_dict=globals())
 
 ##################################  SEGMENTS  #################################
 # A list of segment start times in microseconds.
@@ -646,6 +663,12 @@ FEATURE_TIMESTAMP_KEY = "feature/timestamp"
 FEATURE_DURATION_KEY = "feature/duration"
 # Encodes an optional confidence score for the generated features.
 FEATURE_CONFIDENCE_KEY = "feature/confidence"
+# The feature as a list of floats in the context.
+CONTEXT_FEATURE_FLOATS_KEY = "context_feature/floats"
+# The feature as a list of bytes in the context. May be encoded.
+CONTEXT_FEATURE_BYTES_KEY = "context_feature/bytes"
+# The feature as a list of ints in the context.
+CONTEXT_FEATURE_INTS_KEY = "context_feature/ints"
 
 msu.create_int_list_context_feature(
     "feature_dimensions", FEATURE_DIMENSIONS_KEY, module_dict=globals())
@@ -676,4 +699,10 @@ msu.create_int_list_feature_list(
     "feature_duration", FEATURE_DURATION_KEY, module_dict=globals())
 msu.create_float_list_feature_list(
     "feature_confidence", FEATURE_CONFIDENCE_KEY, module_dict=globals())
+msu.create_float_list_context_feature(
+    "context_feature_floats", CONTEXT_FEATURE_FLOATS_KEY, module_dict=globals())
+msu.create_bytes_list_context_feature(
+    "context_feature_bytes", CONTEXT_FEATURE_BYTES_KEY, module_dict=globals())
+msu.create_int_list_context_feature(
+    "context_feature_ints", CONTEXT_FEATURE_INTS_KEY, module_dict=globals())
 

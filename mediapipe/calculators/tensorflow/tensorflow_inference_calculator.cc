@@ -300,18 +300,26 @@ class TensorFlowInferenceCalculator : public CalculatorBase {
     RET_CHECK(options_.batch_size() == 1 ||
               options_.recurrent_tag_pair().empty())
         << "To use recurrent_tag_pairs, batch_size must be 1.";
+
+    // Helper for StrJoin. Prints key (tag) of map<string, string>.
+    auto TagFormatter =
+        absl::PairFormatter(absl::StreamFormatter(), "",
+                            [](std::string* out, const std::string& second) {});
+
     for (const auto& tag_pair : options_.recurrent_tag_pair()) {
       const std::vector<std::string> tags = absl::StrSplit(tag_pair, ':');
-      RET_CHECK_EQ(tags.size(), 2)
-          << "recurrent_tag_pair must be a colon "
-             "separated std::string with two components: "
-          << tag_pair;
+      RET_CHECK_EQ(tags.size(), 2) << "recurrent_tag_pair must be a colon "
+                                      "separated string with two components: "
+                                   << tag_pair;
+
       RET_CHECK(mediapipe::ContainsKey(tag_to_tensor_map_, tags[0]))
           << "Can't find tag '" << tags[0] << "' in signature "
-          << options_.signature_name();
+          << options_.signature_name() << "; instead found tags "
+          << absl::StrJoin(tag_to_tensor_map_, ", ", TagFormatter);
       RET_CHECK(mediapipe::ContainsKey(tag_to_tensor_map_, tags[1]))
           << "Can't find tag '" << tags[1] << "' in signature "
-          << options_.signature_name();
+          << options_.signature_name() << " ; instead found tags "
+          << absl::StrJoin(tag_to_tensor_map_, ", ", TagFormatter);
       recurrent_feed_tags_.insert(tags[0]);
       recurrent_fetch_tags_to_feed_tags_[tags[1]] = tags[0];
     }
@@ -320,12 +328,14 @@ class TensorFlowInferenceCalculator : public CalculatorBase {
     for (const std::string& tag : cc->Inputs().GetTags()) {
       RET_CHECK(mediapipe::ContainsKey(tag_to_tensor_map_, tag))
           << "Can't find tag '" << tag << "' in signature "
-          << options_.signature_name();
+          << options_.signature_name() << "; instead found tags "
+          << absl::StrJoin(tag_to_tensor_map_, ", ", TagFormatter);
     }
     for (const std::string& tag : cc->Outputs().GetTags()) {
       RET_CHECK(mediapipe::ContainsKey(tag_to_tensor_map_, tag))
           << "Can't find tag '" << tag << "' in signature "
-          << options_.signature_name();
+          << options_.signature_name() << "; instead found tags "
+          << absl::StrJoin(tag_to_tensor_map_, ", ", TagFormatter);
     }
 
     {
@@ -495,11 +505,13 @@ class TensorFlowInferenceCalculator : public CalculatorBase {
               << keyed_tensors.first;
         }
       } else {
-        // Pad by replicating the first tensor, then ignore the values.
-        keyed_tensors.second.resize(options_.batch_size());
-        std::fill(keyed_tensors.second.begin() +
-                      inference_state->batch_timestamps_.size(),
-                  keyed_tensors.second.end(), keyed_tensors.second[0]);
+        if (options_.pad_to_batch_size()) {
+          // Pad by replicating the first tensor, then ignore the values.
+          keyed_tensors.second.resize(options_.batch_size());
+          std::fill(keyed_tensors.second.begin() +
+                        inference_state->batch_timestamps_.size(),
+                    keyed_tensors.second.end(), keyed_tensors.second[0]);
+        }
         tf::Tensor concated;
         const tf::Status concat_status =
             tf::tensor::Concat(keyed_tensors.second, &concated);
@@ -566,7 +578,11 @@ class TensorFlowInferenceCalculator : public CalculatorBase {
 
     absl::WriterMutexLock l(&mutex_);
     // Set that we want to split on each index of the 0th dimension.
-    std::vector<tf::int64> split_vector(options_.batch_size(), 1);
+    std::vector<tf::int64> split_vector(
+        options_.pad_to_batch_size()
+            ? options_.batch_size()
+            : inference_state->batch_timestamps_.size(),
+        1);
     for (int i = 0; i < output_tensor_names.size(); ++i) {
       if (options_.batch_size() == 1) {
         if (cc->Outputs().HasTag(output_name_in_signature[i])) {

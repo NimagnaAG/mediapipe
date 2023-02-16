@@ -79,10 +79,9 @@ class CalculatorNode {
   // running first. If a node is not a source, this method is not called.
   Timestamp SourceProcessOrder(const CalculatorContext* cc) const;
 
-  // Retrieves a std::string name for the node.  If the node's name was set in
-  // the calculator graph config, it will be returned.  Otherwise, a
-  // human-readable std::string that uniquely identifies the node is returned,
-  // e.g.
+  // Retrieves a string name for the node.  If the node's name was set in the
+  // calculator graph config, it will be returned.  Otherwise, a human-readable
+  // string that uniquely identifies the node is returned, e.g.
   // "[FooBarCalculator with first output stream \"foo_bar_output\"]" for
   // non-sink nodes and "[FooBarCalculator with node ID: 42 and input streams:
   // \"foo_bar_input\"]" for sink nodes.  This name should be used in error
@@ -196,9 +195,6 @@ class CalculatorNode {
   // Called by SchedulerQueue when a node is opened.
   void NodeOpened() ABSL_LOCKS_EXCLUDED(status_mutex_);
 
-  // Returns whether this is a GPU calculator node.
-  bool UsesGpu() const { return uses_gpu_; }
-
   // Returns the scheduler queue the node is assigned to.
   internal::SchedulerQueue* GetSchedulerQueue() const {
     return scheduler_queue_;
@@ -235,22 +231,28 @@ class CalculatorNode {
     return *calculator_state_;
   }
 
+  // Returns the node's contract.
+  // Must not be called before the CalculatorNode is initialized.
+  const CalculatorContract& Contract() const {
+    return node_type_info_->Contract();
+  }
+
  private:
-  // Sets up the output side packets from the master flat array.
+  // Sets up the output side packets from the main flat array.
   absl::Status InitializeOutputSidePackets(
       const PacketTypeSet& output_side_packet_types,
       OutputSidePacketImpl* output_side_packets);
   // Connects the input side packets as mirrors on the output side packets.
-  // Output side packets are looked up in the master flat array which is
+  // Output side packets are looked up in the main flat array which is
   // provided.
   absl::Status InitializeInputSidePackets(
       OutputSidePacketImpl* output_side_packets);
-  // Sets up the output streams from the master flat array.
+  // Sets up the output streams from the main flat array.
   absl::Status InitializeOutputStreams(
       OutputStreamManager* output_stream_managers);
   // Sets up the input streams and connects them as mirrors on the
   // output streams.  Both input streams and output streams are looked
-  // up in the master flat arrays which are provided.
+  // up in the main flat arrays which are provided.
   absl::Status InitializeInputStreams(
       InputStreamManager* input_stream_managers,
       OutputStreamManager* output_stream_managers);
@@ -278,7 +280,7 @@ class CalculatorNode {
   void CloseInputStreams() ABSL_LOCKS_EXCLUDED(status_mutex_);
   void CloseOutputStreams(OutputStreamShardSet* outputs)
       ABSL_LOCKS_EXCLUDED(status_mutex_);
-  // Get a std::string describing the input streams.
+  // Get a string describing the input streams.
   std::string DebugInputStreamNames() const;
 
   // Returns true if all outputs will be identical to the previous graph run.
@@ -363,9 +365,6 @@ class CalculatorNode {
   std::unique_ptr<InputStreamHandler> input_stream_handler_;
 
   std::unique_ptr<OutputStreamHandler> output_stream_handler_;
-
-  // Whether this is a GPU calculator.
-  bool uses_gpu_ = false;
 
   // True if CleanupAfterRun() needs to call CloseNode().
   bool needs_to_close_ = false;

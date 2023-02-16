@@ -22,7 +22,10 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_format.h"
 #include "mediapipe/calculators/tensor/inference_calculator.h"
+#include "mediapipe/framework/formats/tensor.h"
+#include "mediapipe/framework/formats/tensor_mtl_buffer_view.h"
 #import "mediapipe/gpu/MPPMetalHelper.h"
 #include "mediapipe/gpu/MPPMetalUtil.h"
 #include "mediapipe/gpu/gpu_buffer.h"
@@ -90,9 +93,10 @@ class InferenceCalculatorMetalImpl
   absl::Status Close(CalculatorContext* cc) override;
 
  private:
-  absl::Status LoadModel(CalculatorContext* cc);
-  absl::Status LoadDelegate(CalculatorContext* cc);
-  absl::Status LoadDelegateAndAllocateTensors(CalculatorContext* cc);
+  absl::Status InitInterpreter(CalculatorContext* cc);
+  void AddDelegate(CalculatorContext* cc,
+                   tflite::InterpreterBuilder* interpreter_builder);
+  absl::Status CreateConverters(CalculatorContext* cc);
 
   // TfLite requires us to keep the model alive as long as the interpreter is.
   Packet<TfLiteModelPtr> model_packet_;
@@ -115,7 +119,9 @@ class InferenceCalculatorMetalImpl
 
 absl::Status InferenceCalculatorMetalImpl::UpdateContract(
     CalculatorContract* cc) {
-  const auto& options = cc->Options<::mediapipe::InferenceCalculatorOptions>();
+  RET_CHECK(!kDelegate(cc).IsConnected())
+      << "Delegate configuration through side packet is not supported.";
+  const auto& options = cc->Options<mediapipe::InferenceCalculatorOptions>();
   RET_CHECK(!options.model_path().empty() ^ kSideInModel(cc).IsConnected())
       << "Either model as side packet or model path in options is required.";
 
@@ -127,11 +133,9 @@ absl::Status InferenceCalculatorMetalImpl::Open(CalculatorContext* cc) {
   const auto& options = cc->Options<::mediapipe::InferenceCalculatorOptions>();
   allow_precision_loss_ = options.delegate().gpu().allow_precision_loss();
 
-  MP_RETURN_IF_ERROR(LoadModel(cc));
-
   gpu_helper_ = [[MPPMetalHelper alloc] initWithCalculatorContext:cc];
   RET_CHECK(gpu_helper_);
-  return LoadDelegateAndAllocateTensors(cc);
+  return InitInterpreter(cc);
 }
 
 absl::Status InferenceCalculatorMetalImpl::Process(CalculatorContext* cc) {
@@ -148,11 +152,12 @@ absl::Status InferenceCalculatorMetalImpl::Process(CalculatorContext* cc) {
   command_buffer.label = @"InferenceCalculator";
   // Explicit copy input with conversion float 32 bits to 16 bits.
   for (int i = 0; i < input_tensors.size(); ++i) {
-    auto input_view = input_tensors[i].GetMtlBufferReadView(command_buffer);
+    auto input_view =
+        MtlBufferView::GetReadView(input_tensors[i], command_buffer);
     // Reshape tensor.
     tflite::gpu::BHWC shape = BhwcFromTensorShape(input_tensors[i].shape());
     auto gpu_buffer_view =
-        gpu_buffers_in_[i]->GetMtlBufferWriteView(command_buffer);
+        MtlBufferView::GetWriteView(*gpu_buffers_in_[i], command_buffer);
     id<MTLComputeCommandEncoder> input_encoder =
         [command_buffer computeCommandEncoder];
     [converter_to_BPHWC4_ convertWithEncoder:input_encoder
@@ -172,9 +177,10 @@ absl::Status InferenceCalculatorMetalImpl::Process(CalculatorContext* cc) {
                                  output_shapes_[i]);
     // Reshape tensor.
     tflite::gpu::BHWC shape = BhwcFromTensorShape(output_shapes_[i]);
-    auto read_view = gpu_buffers_out_[i]->GetMtlBufferReadView(command_buffer);
+    auto read_view =
+        MtlBufferView::GetReadView(*gpu_buffers_out_[i], command_buffer);
     auto write_view =
-        output_tensors->at(i).GetMtlBufferWriteView(command_buffer);
+        MtlBufferView::GetWriteView(output_tensors->at(i), command_buffer);
     id<MTLComputeCommandEncoder> output_encoder =
         [command_buffer computeCommandEncoder];
     [converter_from_BPHWC4_ convertWithEncoder:output_encoder
@@ -199,27 +205,20 @@ absl::Status InferenceCalculatorMetalImpl::Close(CalculatorContext* cc) {
   return absl::OkStatus();
 }
 
-absl::Status InferenceCalculatorMetalImpl::LoadModel(CalculatorContext* cc) {
+absl::Status InferenceCalculatorMetalImpl::InitInterpreter(
+    CalculatorContext* cc) {
   ASSIGN_OR_RETURN(model_packet_, GetModelAsPacket(cc));
   const auto& model = *model_packet_.Get();
-  tflite::ops::builtin::BuiltinOpResolver op_resolver =
-      kSideInCustomOpResolver(cc).GetOr(
-          tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates());
-
-  tflite::InterpreterBuilder(model, op_resolver)(&interpreter_);
+  ASSIGN_OR_RETURN(auto op_resolver_packet, GetOpResolverAsPacket(cc));
+  const auto& op_resolver = op_resolver_packet.Get();
+  tflite::InterpreterBuilder interpreter_builder(model, op_resolver);
+  AddDelegate(cc, &interpreter_builder);
+  interpreter_builder.SetNumThreads(
+      cc->Options<mediapipe::InferenceCalculatorOptions>().cpu_num_thread());
+  RET_CHECK_EQ(interpreter_builder(&interpreter_), kTfLiteOk);
   RET_CHECK(interpreter_);
 
-  interpreter_->SetNumThreads(
-      cc->Options<mediapipe::InferenceCalculatorOptions>().cpu_num_thread());
-
-  return absl::OkStatus();
-}
-
-absl::Status InferenceCalculatorMetalImpl::LoadDelegateAndAllocateTensors(
-    CalculatorContext* cc) {
-  MP_RETURN_IF_ERROR(LoadDelegate(cc));
-
-  // AllocateTensors() can be called only after ModifyGraphWithDelegate.
+  MP_RETURN_IF_ERROR(CreateConverters(cc));
   RET_CHECK_EQ(interpreter_->AllocateTensors(), kTfLiteOk);
   // TODO: Support quantized tensors.
   RET_CHECK_NE(
@@ -228,10 +227,8 @@ absl::Status InferenceCalculatorMetalImpl::LoadDelegateAndAllocateTensors(
   return absl::OkStatus();
 }
 
-absl::Status InferenceCalculatorMetalImpl::LoadDelegate(CalculatorContext* cc) {
-  const auto& calculator_opts =
-      cc->Options<mediapipe::InferenceCalculatorOptions>();
-
+void InferenceCalculatorMetalImpl::AddDelegate(
+    CalculatorContext* cc, tflite::InterpreterBuilder* interpreter_builder) {
   // Configure and create the delegate.
   TFLGpuDelegateOptions options;
   // `enable_quantization` enables the run of sparse models i.e. the models with
@@ -242,15 +239,20 @@ absl::Status InferenceCalculatorMetalImpl::LoadDelegate(CalculatorContext* cc) {
   options.wait_type = TFLGpuDelegateWaitType::TFLGpuDelegateWaitTypeDoNotWait;
   delegate_ =
       TfLiteDelegatePtr(TFLGpuDelegateCreate(&options), &TFLGpuDelegateDelete);
-  RET_CHECK_EQ(interpreter_->ModifyGraphWithDelegate(delegate_.get()),
-               kTfLiteOk);
+  interpreter_builder->AddDelegate(delegate_.get());
+}
 
+absl::Status InferenceCalculatorMetalImpl::CreateConverters(
+    CalculatorContext* cc) {
   id<MTLDevice> device = gpu_helper_.mtlDevice;
 
   // Get input image sizes.
   const auto& input_indices = interpreter_->inputs();
   for (int i = 0; i < input_indices.size(); ++i) {
     const TfLiteTensor* tensor = interpreter_->tensor(input_indices[i]);
+    RET_CHECK(tensor->dims->size > 0) << absl::StrFormat(
+        "Input tensor at index [%d] doesn't specify dimensions.",
+        input_indices[i]);
     // Create and bind input buffer.
     std::vector<int> dims{tensor->dims->data,
                           tensor->dims->data + tensor->dims->size};
@@ -260,7 +262,7 @@ absl::Status InferenceCalculatorMetalImpl::LoadDelegate(CalculatorContext* cc) {
                               : Tensor::ElementType::kFloat32,
         Tensor::Shape{dims}));
     auto buffer_view =
-        gpu_buffers_in_[i]->GetMtlBufferWriteView(gpu_helper_.mtlDevice);
+        MtlBufferView::GetWriteView(*gpu_buffers_in_[i], gpu_helper_.mtlDevice);
     RET_CHECK_EQ(TFLGpuDelegateBindMetalBufferToTensor(
                      delegate_.get(), input_indices[i], buffer_view.buffer()),
                  true);
@@ -272,6 +274,9 @@ absl::Status InferenceCalculatorMetalImpl::LoadDelegate(CalculatorContext* cc) {
   output_shapes_.resize(output_indices.size());
   for (int i = 0; i < output_shapes_.size(); ++i) {
     const TfLiteTensor* tensor = interpreter_->tensor(output_indices[i]);
+    RET_CHECK(tensor->dims->size > 0) << absl::StrFormat(
+        "Output tensor at index [%d] doesn't specify dimensions.",
+        output_indices[i]);
     RET_CHECK(tensor->dims->size <= 4);
     // Create and bind output buffers.
     // Channels are always padded to multiple of 4.
@@ -285,8 +290,8 @@ absl::Status InferenceCalculatorMetalImpl::LoadDelegate(CalculatorContext* cc) {
         Tensor::Shape{dims}));
     RET_CHECK_EQ(TFLGpuDelegateBindMetalBufferToTensor(
                      delegate_.get(), output_indices[i],
-                     gpu_buffers_out_[i]
-                         ->GetMtlBufferWriteView(gpu_helper_.mtlDevice)
+                     MtlBufferView::GetWriteView(*gpu_buffers_out_[i],
+                                                 gpu_helper_.mtlDevice)
                          .buffer()),
                  true);
   }

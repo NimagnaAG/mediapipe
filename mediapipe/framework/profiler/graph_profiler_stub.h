@@ -74,6 +74,9 @@ class TraceEvent {
   inline TraceEvent& set_event_data(int64 data) { return *this; }
 };
 
+// GraphProfiler::CaptureProfile option, see the method for details.
+enum class PopulateGraphConfig { kNo, kFull };
+
 // Empty implementation of ProfilingContext to be used in place of the
 // GraphProfiler when the main implementation is disabled.
 class GraphProfilerStub {
@@ -85,6 +88,12 @@ class GraphProfilerStub {
       std::vector<CalculatorProfile>*) const {
     return absl::OkStatus();
   }
+  absl::Status CaptureProfile(
+      GraphProfile* result,
+      PopulateGraphConfig populate_config = PopulateGraphConfig::kNo) {
+    return absl::OkStatus();
+  }
+  inline absl::Status WriteProfile() { return absl::OkStatus(); }
   inline void Pause() {}
   inline void Resume() {}
   inline void Reset() {}

@@ -14,72 +14,112 @@
 
 #include "mediapipe/framework/deps/status_builder.h"
 
+#include <memory>
+#include <sstream>
+
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 
 namespace mediapipe {
 
-StatusBuilder::StatusBuilder(const StatusBuilder& sb) {
-  status_ = sb.status_;
-  file_ = sb.file_;
-  line_ = sb.line_;
-  no_logging_ = sb.no_logging_;
-  stream_ = absl::make_unique<std::ostringstream>(sb.stream_->str());
-  join_style_ = sb.join_style_;
-}
+StatusBuilder::StatusBuilder(const StatusBuilder& sb)
+    : impl_(sb.impl_ ? std::make_unique<Impl>(*sb.impl_) : nullptr) {}
 
 StatusBuilder& StatusBuilder::operator=(const StatusBuilder& sb) {
-  status_ = sb.status_;
-  file_ = sb.file_;
-  line_ = sb.line_;
-  no_logging_ = sb.no_logging_;
-  stream_ = absl::make_unique<std::ostringstream>(sb.stream_->str());
-  join_style_ = sb.join_style_;
+  if (!sb.impl_) {
+    impl_ = nullptr;
+    return *this;
+  }
+  if (impl_) {
+    *impl_ = *sb.impl_;
+    return *this;
+  }
+  impl_ = std::make_unique<Impl>(*sb.impl_);
+
   return *this;
 }
 
-StatusBuilder& StatusBuilder::SetAppend() {
-  if (status_.ok()) return *this;
-  join_style_ = MessageJoinStyle::kAppend;
+StatusBuilder& StatusBuilder::SetAppend() & {
+  if (!impl_) return *this;
+  impl_->join_style = Impl::MessageJoinStyle::kAppend;
   return *this;
 }
 
-StatusBuilder& StatusBuilder::SetPrepend() {
-  if (status_.ok()) return *this;
-  join_style_ = MessageJoinStyle::kPrepend;
+StatusBuilder&& StatusBuilder::SetAppend() && { return std::move(SetAppend()); }
+
+StatusBuilder& StatusBuilder::SetPrepend() & {
+  if (!impl_) return *this;
+  impl_->join_style = Impl::MessageJoinStyle::kPrepend;
   return *this;
 }
 
-StatusBuilder& StatusBuilder::SetNoLogging() {
-  no_logging_ = true;
+StatusBuilder&& StatusBuilder::SetPrepend() && {
+  return std::move(SetPrepend());
+}
+
+StatusBuilder& StatusBuilder::SetNoLogging() & {
+  if (!impl_) return *this;
+  impl_->no_logging = true;
   return *this;
+}
+
+StatusBuilder&& StatusBuilder::SetNoLogging() && {
+  return std::move(SetNoLogging());
 }
 
 StatusBuilder::operator Status() const& {
-  if (stream_->str().empty() || no_logging_) {
-    return status_;
-  }
   return StatusBuilder(*this).JoinMessageToStatus();
 }
 
-StatusBuilder::operator Status() && {
-  if (stream_->str().empty() || no_logging_) {
-    return status_;
-  }
-  return JoinMessageToStatus();
-}
+StatusBuilder::operator Status() && { return JoinMessageToStatus(); }
 
 absl::Status StatusBuilder::JoinMessageToStatus() {
-  std::string message;
-  if (join_style_ == MessageJoinStyle::kAnnotate) {
-    if (!status_.ok()) {
-      message = absl::StrCat(status_.message(), "; ", stream_->str());
-    }
-  } else {
-    message = join_style_ == MessageJoinStyle::kPrepend
-                  ? absl::StrCat(stream_->str(), status_.message())
-                  : absl::StrCat(status_.message(), stream_->str());
+  if (!impl_) {
+    return absl::OkStatus();
   }
-  return Status(status_.code(), message);
+  return impl_->JoinMessageToStatus();
+}
+
+absl::Status StatusBuilder::Impl::JoinMessageToStatus() {
+  if (stream.str().empty() || no_logging) {
+    return status;
+  }
+  return absl::Status(status.code(), [this]() {
+    switch (join_style) {
+      case MessageJoinStyle::kAnnotate:
+        return absl::StrCat(status.message(), "; ", stream.str());
+      case MessageJoinStyle::kAppend:
+        return absl::StrCat(status.message(), stream.str());
+      case MessageJoinStyle::kPrepend:
+        return absl::StrCat(stream.str(), status.message());
+    }
+  }());
+}
+
+StatusBuilder::Impl::Impl(const absl::Status& status,
+                          mediapipe::source_location location)
+    : status(status), location(location), stream() {}
+
+StatusBuilder::Impl::Impl(absl::Status&& status,
+                          mediapipe::source_location location)
+    : status(std::move(status)), location(location), stream() {}
+
+StatusBuilder::Impl::Impl(const Impl& other)
+    : status(other.status),
+      location(other.location),
+      no_logging(other.no_logging),
+      stream(other.stream.str()),
+      join_style(other.join_style) {}
+
+StatusBuilder::Impl& StatusBuilder::Impl::operator=(const Impl& other) {
+  status = other.status;
+  location = other.location;
+  no_logging = other.no_logging;
+  stream = std::ostringstream(other.stream.str());
+  join_style = other.join_style;
+
+  return *this;
 }
 
 }  // namespace mediapipe

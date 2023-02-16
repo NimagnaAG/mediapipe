@@ -17,6 +17,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/types/variant.h"
 #include "mediapipe/framework/formats/location.h"
+#include "mediapipe/framework/formats/location_opencv.h"
 #include "mediapipe/framework/port/canonical_errors.h"
 #include "mediapipe/framework/port/map_util.h"
 #include "mediapipe/framework/port/status.h"
@@ -35,7 +36,7 @@ Detection TensorToDetection(
   detection.add_score(score);
 
   // According to mediapipe/framework/formats/detection.proto
-  // "Either std::string or integer labels must be used but not both at the
+  // "Either string or integer labels must be used but not both at the
   // same time."
   if (absl::holds_alternative<int>(class_label)) {
     detection.add_label_id(absl::get<int>(class_label));
@@ -195,7 +196,7 @@ Status TensorsToDetections(const ::tensorflow::Tensor& num_detections,
         }
       }
       LocationData mask_location_data;
-      mediapipe::Location::CreateCvMaskLocation<float>(mask_image)
+      mediapipe::CreateCvMaskLocation<float>(mask_image)
           .ConvertToProto(&mask_location_data);
       location_data->MergeFrom(mask_location_data);
     }

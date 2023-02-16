@@ -46,6 +46,8 @@ message RenderAnnotation {
     optional double bottom = 4;
     optional bool normalized = 5 [default = false];
     optional double rotation = 6;  // Rotation in radians.
+    // Radius of top left corner circle.
+    optional double top_left_thickness = 7;
   }
 
   message FilledRectangle {
@@ -166,6 +168,12 @@ message RenderAnnotation {
     // [left, baseline] represent  [center_x, center_y].
     optional bool center_horizontally = 7 [default = false];
     optional bool center_vertically = 8 [default = false];
+
+    // Thickness of the text outline.
+    optional double outline_thickness = 11 [default = 0.0];
+
+    // Color of the text outline.
+    optional Color outline_color = 12;
   }
 
   // The RenderAnnotation can be one of the below formats.

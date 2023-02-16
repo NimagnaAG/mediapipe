@@ -16,22 +16,40 @@ load(
     "//mediapipe/framework/tool:mediapipe_graph.bzl",
     "mediapipe_simple_subgraph",
 )
+load(
+    "//mediapipe/framework/tool:mediapipe_files.bzl",
+    "mediapipe_files",
+)
 
 licenses(["notice"])
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "hand_landmark.tflite",
-    "hand_landmark_sparse.tflite",
-    "handedness.txt",
+mediapipe_files(srcs = [
+    "hand_landmark_full.tflite",
+    "hand_landmark_lite.tflite",
 ])
+
+exports_files(srcs = ["handedness.txt"])
+
+mediapipe_simple_subgraph(
+    name = "hand_landmark_model_loader",
+    graph = "hand_landmark_model_loader.pbtxt",
+    register_as = "HandLandmarkModelLoader",
+    deps = [
+        "//mediapipe/calculators/core:constant_side_packet_calculator",
+        "//mediapipe/calculators/tflite:tflite_model_calculator",
+        "//mediapipe/calculators/util:local_file_contents_calculator",
+        "//mediapipe/framework/tool:switch_container",
+    ],
+)
 
 mediapipe_simple_subgraph(
     name = "hand_landmark_cpu",
     graph = "hand_landmark_cpu.pbtxt",
     register_as = "HandLandmarkCpu",
     deps = [
+        ":hand_landmark_model_loader",
         "//mediapipe/calculators/core:gate_calculator",
         "//mediapipe/calculators/core:split_vector_calculator",
         "//mediapipe/calculators/tensor:image_to_tensor_calculator",
@@ -42,6 +60,7 @@ mediapipe_simple_subgraph(
         "//mediapipe/calculators/util:landmark_letterbox_removal_calculator",
         "//mediapipe/calculators/util:landmark_projection_calculator",
         "//mediapipe/calculators/util:thresholding_calculator",
+        "//mediapipe/calculators/util:world_landmark_projection_calculator",
     ],
 )
 
@@ -50,6 +69,7 @@ mediapipe_simple_subgraph(
     graph = "hand_landmark_gpu.pbtxt",
     register_as = "HandLandmarkGpu",
     deps = [
+        ":hand_landmark_model_loader",
         "//mediapipe/calculators/core:gate_calculator",
         "//mediapipe/calculators/core:split_vector_calculator",
         "//mediapipe/calculators/tensor:image_to_tensor_calculator",
@@ -60,6 +80,7 @@ mediapipe_simple_subgraph(
         "//mediapipe/calculators/util:landmark_letterbox_removal_calculator",
         "//mediapipe/calculators/util:landmark_projection_calculator",
         "//mediapipe/calculators/util:thresholding_calculator",
+        "//mediapipe/calculators/util:world_landmark_projection_calculator",
     ],
 )
 
@@ -148,7 +169,6 @@ mediapipe_simple_subgraph(
     graph = "hand_landmark_landmarks_to_roi.pbtxt",
     register_as = "HandLandmarkLandmarksToRoi",
     deps = [
-        "//mediapipe/calculators/core:split_landmarks_calculator",
         "//mediapipe/calculators/util:rect_transformation_calculator",
         "//mediapipe/modules/hand_landmark/calculators:hand_landmarks_to_rect_calculator",
     ],

@@ -26,7 +26,7 @@ MediaPipe Face Detection is an ultrafast face detection solution that comes with
 face detector tailored for mobile GPU inference. The detector's super-realtime
 performance enables it to be applied to any live viewfinder experience that
 requires an accurate facial region of interest as an input for other
-task-specific models, such as 3D facial keypoint or geometry estimation (e.g.,
+task-specific models, such as 3D facial keypoint estimation (e.g.,
 [MediaPipe Face Mesh](./face_mesh.md)), facial features or expression
 classification, and face region segmentation. BlazeFace uses a lightweight
 feature extraction network inspired by, but distinct from
@@ -37,7 +37,7 @@ improved tie resolution strategy alternative to non-maximum suppression. For
 more information about BlazeFace, please see the [Resources](#resources)
 section.
 
-![face_detection_android_gpu.gif](../images/mobile/face_detection_android_gpu.gif)
+![face_detection_android_gpu.gif](https://mediapipe.dev/images/mobile/face_detection_android_gpu.gif)
 
 ## Solution APIs
 
@@ -53,6 +53,25 @@ best for faces within 5 meters. For the full-range option, a sparse model is
 used for its improved inference speed. Please refer to the
 [model cards](./models.md#face_detection) for details. Default to `0` if not
 specified.
+
+Note: Not available for JavaScript (use "model" instead).
+
+#### model
+
+A string value to indicate which model should be used. Use "short" to
+select a short-range model that works best for faces within 2 meters from the
+camera, and "full" for a full-range model best for faces within 5 meters. For
+the full-range option, a sparse model is used for its improved inference speed.
+Please refer to the model cards for details. Default to empty string.
+
+Note: Valid only for JavaScript solution.
+
+#### selfie_mode
+
+A boolean value to indicate whether to flip the images/video frames
+horizontally or not. Default to `false`.
+
+Note: Valid only for JavaScript solution.
 
 #### min_detection_confidence
 
@@ -146,9 +165,9 @@ Please first see general [introduction](../getting_started/javascript.md) on
 MediaPipe in JavaScript, then learn more in the companion [web demo](#resources)
 and the following usage example.
 
-Supported configuration options:
-
-*   [modelSelection](#model_selection)
+Supported face detection options:
+*   [selfieMode](#selfie_mode)
+*   [model](#model)
 *   [minDetectionConfidence](#min_detection_confidence)
 
 ```html
@@ -176,6 +195,7 @@ Supported configuration options:
 const videoElement = document.getElementsByClassName('input_video')[0];
 const canvasElement = document.getElementsByClassName('output_canvas')[0];
 const canvasCtx = canvasElement.getContext('2d');
+const drawingUtils = window;
 
 function onResults(results) {
   // Draw the overlays.
@@ -199,7 +219,7 @@ const faceDetection = new FaceDetection({locateFile: (file) => {
   return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.0/${file}`;
 }});
 faceDetection.setOptions({
-  modelSelection: 0,
+  model: 'short',
   minDetectionConfidence: 0.5
 });
 faceDetection.onResults(onResults);
@@ -218,13 +238,12 @@ camera.start();
 ### Android Solution API
 
 Please first follow general
-[instructions](../getting_started/android_solutions.md#integrate-mediapipe-android-solutions-api)
-to add MediaPipe Gradle dependencies, then try the Face Detection Solution API
-in the companion
-[example Android Studio project](https://github.com/google/mediapipe/tree/master/mediapipe/examples/android/solutions/facedetection)
-following
-[these instructions](../getting_started/android_solutions.md#build-solution-example-apps-in-android-studio)
+[instructions](../getting_started/android_solutions.md) to add MediaPipe Gradle
+dependencies and try the Android Solution API in the companion
+[example Android Studio project](https://github.com/google/mediapipe/tree/master/mediapipe/examples/android/solutions/facedetection),
 and learn more in the usage example below.
+
+Supported configuration options:
 
 *   [staticImageMode](#static_image_mode)
 *   [modelSelection](#model_selection)
@@ -257,8 +276,15 @@ glSurfaceView.setSolutionResultRenderer(new FaceDetectionResultGlRenderer());
 glSurfaceView.setRenderInputImage(true);
 faceDetection.setResultListener(
     faceDetectionResult -> {
+      if (faceDetectionResult.multiFaceDetections().isEmpty()) {
+        return;
+      }
       RelativeKeypoint noseTip =
-          FaceDetection.getFaceKeypoint(result, 0, FaceKeypoint.NOSE_TIP);
+          faceDetectionResult
+              .multiFaceDetections()
+              .get(0)
+              .getLocationData()
+              .getRelativeKeypoints(FaceKeypoint.NOSE_TIP);
       Log.i(
           TAG,
           String.format(
@@ -297,10 +323,17 @@ FaceDetection faceDetection = new FaceDetection(this, faceDetectionOptions);
 FaceDetectionResultImageView imageView = new FaceDetectionResultImageView(this);
 faceDetection.setResultListener(
     faceDetectionResult -> {
+      if (faceDetectionResult.multiFaceDetections().isEmpty()) {
+        return;
+      }
       int width = faceDetectionResult.inputBitmap().getWidth();
       int height = faceDetectionResult.inputBitmap().getHeight();
       RelativeKeypoint noseTip =
-          FaceDetection.getFaceKeypoint(result, 0, FaceKeypoint.NOSE_TIP);
+          faceDetectionResult
+              .multiFaceDetections()
+              .get(0)
+              .getLocationData()
+              .getRelativeKeypoints(FaceKeypoint.NOSE_TIP);
       Log.i(
           TAG,
           String.format(
@@ -334,9 +367,9 @@ ActivityResultLauncher<Intent> imageGetter =
             }
           }
         });
-Intent gallery = new Intent(
-    Intent.ACTION_PICK, MediaStore.Images.Media.INTERNAL_CONTENT_URI);
-imageGetter.launch(gallery);
+Intent pickImageIntent = new Intent(Intent.ACTION_PICK);
+pickImageIntent.setDataAndType(MediaStore.Images.Media.INTERNAL_CONTENT_URI, "image/*");
+imageGetter.launch(pickImageIntent);
 ```
 
 #### Video Input
@@ -368,8 +401,15 @@ glSurfaceView.setRenderInputImage(true);
 
 faceDetection.setResultListener(
     faceDetectionResult -> {
+      if (faceDetectionResult.multiFaceDetections().isEmpty()) {
+        return;
+      }
       RelativeKeypoint noseTip =
-        FaceDetection.getFaceKeypoint(result, 0, FaceKeypoint.NOSE_TIP);
+          faceDetectionResult
+              .multiFaceDetections()
+              .get(0)
+              .getLocationData()
+              .getRelativeKeypoints(FaceKeypoint.NOSE_TIP);
       Log.i(
           TAG,
           String.format(
@@ -398,9 +438,9 @@ ActivityResultLauncher<Intent> videoGetter =
             }
           }
         });
-Intent gallery =
-    new Intent(Intent.ACTION_PICK, MediaStore.Video.Media.INTERNAL_CONTENT_URI);
-videoGetter.launch(gallery);
+Intent pickVideoIntent = new Intent(Intent.ACTION_PICK);
+pickVideoIntent.setDataAndType(MediaStore.Video.Media.INTERNAL_CONTENT_URI, "video/*");
+videoGetter.launch(pickVideoIntent);
 ```
 
 ## Example Apps

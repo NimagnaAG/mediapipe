@@ -69,7 +69,7 @@ class TensorFlowSessionFromFrozenGraphGenerator : public PacketGenerator {
         TensorFlowSessionFromFrozenGraphGeneratorOptions::ext);
     bool has_exactly_one_model =
         !options.graph_proto_path().empty()
-            ? !(input_side_packets->HasTag(kStringModelTag) |
+            ? !(input_side_packets->HasTag(kStringModelTag) ||
                 input_side_packets->HasTag(kStringModelFilePathTag))
             : (input_side_packets->HasTag(kStringModelTag) ^
                input_side_packets->HasTag(kStringModelFilePathTag));
@@ -84,7 +84,7 @@ class TensorFlowSessionFromFrozenGraphGenerator : public PacketGenerator {
     } else if (input_side_packets->HasTag(kStringModelFilePathTag)) {
       input_side_packets->Tag(kStringModelFilePathTag)
           .Set<std::string>(
-              // Filename of std::string model.
+              // Filename of string model.
           );
     }
     output_side_packets->Tag(kSessionTag)

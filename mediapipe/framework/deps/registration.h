@@ -16,6 +16,7 @@
 #define MEDIAPIPE_DEPS_REGISTRATION_H_
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <tuple>
@@ -26,10 +27,12 @@
 
 #include "absl/base/macros.h"
 #include "absl/base/thread_annotations.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/meta/type_traits.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "mediapipe/framework/deps/registration_token.h"
 #include "mediapipe/framework/port/canonical_errors.h"
@@ -129,8 +132,8 @@ namespace mediapipe {
 //      }));
 
 namespace registration_internal {
-constexpr char kCxxSep[] = "::";
-constexpr char kNameSep[] = ".";
+inline constexpr char kCxxSep[] = "::";
+inline constexpr char kNameSep[] = ".";
 
 template <typename T>
 struct WrapStatusOr {
@@ -144,7 +147,7 @@ struct WrapStatusOr<absl::StatusOr<T>> {
 };
 }  // namespace registration_internal
 
-class NamespaceWhitelist {
+class NamespaceAllowlist {
  public:
   static const absl::flat_hash_set<std::string>& TopNamespaces();
 };
@@ -159,7 +162,8 @@ class FunctionRegistry {
   FunctionRegistry(const FunctionRegistry&) = delete;
   FunctionRegistry& operator=(const FunctionRegistry&) = delete;
 
-  RegistrationToken Register(const std::string& name, Function func)
+  RegistrationToken Register(absl::string_view name, Function func,
+                             std::string filename, uint64_t line)
       ABSL_LOCKS_EXCLUDED(lock_) {
     std::string normalized_name = GetNormalizedName(name);
     absl::WriterMutexLock lock(&lock_);
@@ -169,10 +173,21 @@ class FunctionRegistry {
     }
     if (functions_.insert(std::make_pair(normalized_name, std::move(func)))
             .second) {
+#ifndef NDEBUG
+      locations_.emplace(normalized_name,
+                         std::make_pair(std::move(filename), line));
+#endif
       return RegistrationToken(
           [this, normalized_name]() { Unregister(normalized_name); });
     }
+#ifndef NDEBUG
+    LOG(FATAL) << "Function with name " << name << " already registered."
+               << " First registration at "
+               << locations_.at(normalized_name).first << ":"
+               << locations_.at(normalized_name).second;
+#else
     LOG(FATAL) << "Function with name " << name << " already registered.";
+#endif
     return RegistrationToken([]() {});
   }
 
@@ -189,14 +204,15 @@ class FunctionRegistry {
             absl::enable_if_t<std::is_convertible<std::tuple<Args2...>,
                                                   std::tuple<Args...>>::value,
                               int> = 0>
-  ReturnType Invoke(const std::string& name, Args2&&... args)
+  ReturnType Invoke(absl::string_view name, Args2&&... args)
       ABSL_LOCKS_EXCLUDED(lock_) {
     Function function;
     {
       absl::ReaderMutexLock lock(&lock_);
       auto it = functions_.find(name);
       if (it == functions_.end()) {
-        return absl::NotFoundError("No registered object with name: " + name);
+        return absl::NotFoundError(
+            absl::StrCat("No registered object with name: ", name));
       }
       function = it->second;
     }
@@ -206,7 +222,7 @@ class FunctionRegistry {
   // Invokes the specified factory function and returns the result.
   // Namespaces in |name| and |ns| are separated by kNameSep.
   template <typename... Args2>
-  ReturnType Invoke(const std::string& ns, const std::string& name,
+  ReturnType Invoke(absl::string_view ns, absl::string_view name,
                     Args2&&... args) ABSL_LOCKS_EXCLUDED(lock_) {
     return Invoke(GetQualifiedName(ns, name), args...);
   }
@@ -214,14 +230,14 @@ class FunctionRegistry {
   // Note that it's possible for registered implementations to be subsequently
   // unregistered, though this will never happen with registrations made via
   // MEDIAPIPE_REGISTER_FACTORY_FUNCTION.
-  bool IsRegistered(const std::string& name) const ABSL_LOCKS_EXCLUDED(lock_) {
+  bool IsRegistered(absl::string_view name) const ABSL_LOCKS_EXCLUDED(lock_) {
     absl::ReaderMutexLock lock(&lock_);
     return functions_.count(name) != 0;
   }
 
   // Returns true if the specified factory function is available.
   // Namespaces in |name| and |ns| are separated by kNameSep.
-  bool IsRegistered(const std::string& ns, const std::string& name) const
+  bool IsRegistered(absl::string_view ns, absl::string_view name) const
       ABSL_LOCKS_EXCLUDED(lock_) {
     return IsRegistered(GetQualifiedName(ns, name));
   }
@@ -244,13 +260,13 @@ class FunctionRegistry {
   // Normalizes a C++ qualified name.  Validates the name qualification.
   // The name must be either unqualified or fully qualified with a leading "::".
   // The leading "::" in a fully qualified name is stripped.
-  std::string GetNormalizedName(const std::string& name) {
-    constexpr auto kCxxSep = registration_internal::kCxxSep;
+  std::string GetNormalizedName(absl::string_view name) {
+    using ::mediapipe::registration_internal::kCxxSep;
     std::vector<std::string> names = absl::StrSplit(name, kCxxSep);
     if (names[0].empty()) {
       names.erase(names.begin());
     } else {
-      CHECK_EQ(1, names.size())
+      CHECK_EQ(1u, names.size())
           << "A registered class name must be either fully qualified "
           << "with a leading :: or unqualified, got: " << name << ".";
     }
@@ -259,10 +275,10 @@ class FunctionRegistry {
 
   // Returns the registry key for a name specified within a namespace.
   // Namespaces are separated by kNameSep.
-  std::string GetQualifiedName(const std::string& ns,
-                               const std::string& name) const {
-    constexpr auto kCxxSep = registration_internal::kCxxSep;
-    constexpr auto kNameSep = registration_internal::kNameSep;
+  std::string GetQualifiedName(absl::string_view ns,
+                               absl::string_view name) const {
+    using ::mediapipe::registration_internal::kCxxSep;
+    using ::mediapipe::registration_internal::kNameSep;
     std::vector<std::string> names = absl::StrSplit(name, kNameSep);
     if (names[0].empty()) {
       names.erase(names.begin());
@@ -287,22 +303,27 @@ class FunctionRegistry {
 
  private:
   mutable absl::Mutex lock_;
-  std::unordered_map<std::string, Function> functions_ ABSL_GUARDED_BY(lock_);
+  absl::flat_hash_map<std::string, Function> functions_ ABSL_GUARDED_BY(lock_);
+#ifndef NDEBUG
+  // Stores filename and line number for useful debug log.
+  absl::flat_hash_map<std::string, std::pair<std::string, uint32_t>> locations_
+      ABSL_GUARDED_BY(lock_);
+#endif
 
-  // For names included in NamespaceWhitelist, strips the namespace.
-  std::string GetAdjustedName(const std::string& name) {
-    constexpr auto kCxxSep = registration_internal::kCxxSep;
+  // For names included in NamespaceAllowlist, strips the namespace.
+  std::string GetAdjustedName(absl::string_view name) {
+    using ::mediapipe::registration_internal::kCxxSep;
     std::vector<std::string> names = absl::StrSplit(name, kCxxSep);
     std::string base_name = names.back();
     names.pop_back();
     std::string ns = absl::StrJoin(names, kCxxSep);
-    if (NamespaceWhitelist::TopNamespaces().count(ns)) {
+    if (NamespaceAllowlist::TopNamespaces().count(ns)) {
       return base_name;
     }
-    return name;
+    return std::string(name);
   }
 
-  void Unregister(const std::string& name) {
+  void Unregister(absl::string_view name) {
     absl::WriterMutexLock lock(&lock_);
     std::string adjusted_name = GetAdjustedName(name);
     if (adjusted_name != name) {
@@ -317,16 +338,18 @@ class GlobalFactoryRegistry {
   using Functions = FunctionRegistry<R, Args...>;
 
  public:
-  static RegistrationToken Register(const std::string& name,
-                                    typename Functions::Function func) {
-    return functions()->Register(name, std::move(func));
+  static RegistrationToken Register(absl::string_view name,
+                                    typename Functions::Function func,
+                                    std::string filename, uint64_t line) {
+    return functions()->Register(name, std::move(func), std::move(filename),
+                                 line);
   }
 
   // Invokes the specified factory function and returns the result.
   // If using namespaces with this registry, the variant with a namespace
   // argument should be used.
   template <typename... Args2>
-  static typename Functions::ReturnType CreateByName(const std::string& name,
+  static typename Functions::ReturnType CreateByName(absl::string_view name,
                                                      Args2&&... args) {
     return functions()->Invoke(name, std::forward<Args2>(args)...);
   }
@@ -334,7 +357,7 @@ class GlobalFactoryRegistry {
   // Returns true if the specified factory function is available.
   // If using namespaces with this registry, the variant with a namespace
   // argument should be used.
-  static bool IsRegistered(const std::string& name) {
+  static bool IsRegistered(absl::string_view name) {
     return functions()->IsRegistered(name);
   }
 
@@ -350,13 +373,13 @@ class GlobalFactoryRegistry {
                                                   std::tuple<Args...>>::value,
                               int> = 0>
   static typename Functions::ReturnType CreateByNameInNamespace(
-      const std::string& ns, const std::string& name, Args2&&... args) {
+      absl::string_view ns, absl::string_view name, Args2&&... args) {
     return functions()->Invoke(ns, name, std::forward<Args2>(args)...);
   }
 
   // Returns true if the specified factory function is available.
   // Namespaces in |name| and |ns| are separated by kNameSep.
-  static bool IsRegistered(const std::string& ns, const std::string& name) {
+  static bool IsRegistered(absl::string_view ns, absl::string_view name) {
     return functions()->IsRegistered(ns, name);
   }
 
@@ -370,7 +393,7 @@ class GlobalFactoryRegistry {
   GlobalFactoryRegistry() = delete;
 };
 
-// Two levels of macros are required to convert __LINE__ into a std::string
+// Two levels of macros are required to convert __LINE__ into a string
 // containing the line number.
 #define REGISTRY_STATIC_VAR_INNER(var_name, line) var_name##_##line##__
 #define REGISTRY_STATIC_VAR(var_name, line) \
@@ -379,12 +402,12 @@ class GlobalFactoryRegistry {
 #define MEDIAPIPE_REGISTER_FACTORY_FUNCTION(RegistryType, name, ...) \
   static auto* REGISTRY_STATIC_VAR(registration_##name, __LINE__) =  \
       new mediapipe::RegistrationToken(                              \
-          RegistryType::Register(#name, __VA_ARGS__))
+          RegistryType::Register(#name, __VA_ARGS__, __FILE__, __LINE__))
 
 #define REGISTER_FACTORY_FUNCTION_QUALIFIED(RegistryType, var_name, name, ...) \
   static auto* REGISTRY_STATIC_VAR(var_name, __LINE__) =                       \
       new mediapipe::RegistrationToken(                                        \
-          RegistryType::Register(#name, __VA_ARGS__))
+          RegistryType::Register(#name, __VA_ARGS__, __FILE__, __LINE__))
 
 }  // namespace mediapipe
 

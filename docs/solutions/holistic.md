@@ -29,7 +29,7 @@ solutions for these tasks. Combining them all in real-time into a semantically
 consistent end-to-end solution is a uniquely difficult problem requiring
 simultaneous inference of multiple, dependent neural networks.
 
-![holistic_sports_and_gestures_example.gif](../images/mobile/holistic_sports_and_gestures_example.gif) |
+![holistic_sports_and_gestures_example.gif](https://mediapipe.dev/images/mobile/holistic_sports_and_gestures_example.gif) |
 :----------------------------------------------------------------------------------------------------: |
 *Fig 1. Example of MediaPipe Holistic.*                                                                |
 
@@ -54,7 +54,7 @@ full-resolution input frame to these ROIs and apply task-specific face and hand
 models to estimate their corresponding landmarks. Finally, we merge all
 landmarks with those of the pose model to yield the full 540+ landmarks.
 
-![holistic_pipeline_example.jpg](../images/mobile/holistic_pipeline_example.jpg) |
+![holistic_pipeline_example.jpg](https://mediapipe.dev/images/mobile/holistic_pipeline_example.jpg) |
 :------------------------------------------------------------------------------: |
 *Fig 2. MediaPipe Holistic Pipeline Overview.*                                   |
 
@@ -159,6 +159,11 @@ images to reduce jitter. Ignored if [enable_segmentation](#enable_segmentation)
 is `false` or [static_image_mode](#static_image_mode) is `true`. Default to
 `true`.
 
+#### refine_face_landmarks
+
+Whether to further refine the landmark coordinates around the eyes and lips, and
+output additional landmarks around the irises. Default to `false`.
+
 #### min_detection_confidence
 
 Minimum confidence value (`[0.0, 1.0]`) from the person-detection model for the
@@ -241,6 +246,7 @@ Supported configuration options:
 *   [smooth_landmarks](#smooth_landmarks)
 *   [enable_segmentation](#enable_segmentation)
 *   [smooth_segmentation](#smooth_segmentation)
+*   [refine_face_landmarks](#refine_face_landmarks)
 *   [min_detection_confidence](#min_detection_confidence)
 *   [min_tracking_confidence](#min_tracking_confidence)
 
@@ -253,10 +259,12 @@ mp_holistic = mp.solutions.holistic
 
 # For static images:
 IMAGE_FILES = []
+BG_COLOR = (192, 192, 192) # gray
 with mp_holistic.Holistic(
     static_image_mode=True,
     model_complexity=2,
-    enable_segmentation=True) as holistic:
+    enable_segmentation=True,
+    refine_face_landmarks=True) as holistic:
   for idx, file in enumerate(IMAGE_FILES):
     image = cv2.imread(file)
     image_height, image_width, _ = image.shape
@@ -350,6 +358,7 @@ Supported configuration options:
 *   [smoothLandmarks](#smooth_landmarks)
 *   [enableSegmentation](#enable_segmentation)
 *   [smoothSegmentation](#smooth_segmentation)
+*   [refineFaceLandmarks](#refineFaceLandmarks)
 *   [minDetectionConfidence](#min_detection_confidence)
 *   [minTrackingConfidence](#min_tracking_confidence)
 
@@ -421,6 +430,7 @@ holistic.setOptions({
   smoothLandmarks: true,
   enableSegmentation: true,
   smoothSegmentation: true,
+  refineFaceLandmarks: true,
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5
 });

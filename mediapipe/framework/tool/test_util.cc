@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/cleanup/cleanup.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
@@ -208,6 +209,27 @@ bool CompareImageFrames(const ImageFrame& image1, const ImageFrame& image2,
   return false;
 }
 
+absl::Status CompareAndSaveImageOutput(
+    absl::string_view golden_image_path, const ImageFrame& actual,
+    const ImageFrameComparisonOptions& options) {
+  ASSIGN_OR_RETURN(auto output_img_path, SavePngTestOutput(actual, "output"));
+
+  auto expected = LoadTestImage(GetTestFilePath(golden_image_path));
+  if (!expected.ok()) {
+    return expected.status();
+  }
+  ASSIGN_OR_RETURN(auto expected_img_path,
+                   SavePngTestOutput(**expected, "expected"));
+
+  std::unique_ptr<ImageFrame> diff_img;
+  auto status = CompareImageFrames(**expected, actual, options.max_color_diff,
+                                   options.max_alpha_diff, options.max_avg_diff,
+                                   diff_img);
+  ASSIGN_OR_RETURN(auto diff_img_path, SavePngTestOutput(*diff_img, "diff"));
+
+  return status;
+}
+
 std::string GetTestRootDir() {
   return file::JoinPath(std::getenv("TEST_SRCDIR"), "mediapipe");
 }
@@ -215,12 +237,20 @@ std::string GetTestRootDir() {
 std::string GetTestOutputsDir() {
   const char* output_dir = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (!output_dir) {
+#ifdef __APPLE__
+    char path[PATH_MAX];
+    size_t n = confstr(_CS_DARWIN_USER_TEMP_DIR, path, sizeof(path));
+    if (n > 0 && n < sizeof(path)) return path;
+#endif  // __APPLE__
+#ifdef __ANDROID__
+    return "/data/local/tmp/";
+#endif  // __ANDROID__
     output_dir = "/tmp";
   }
   return output_dir;
 }
 
-std::string GetTestDataDir(const std::string& package_base_path) {
+std::string GetTestDataDir(absl::string_view package_base_path) {
   return file::JoinPath(GetTestRootDir(), package_base_path, "testdata/");
 }
 
@@ -228,11 +258,8 @@ std::string GetTestFilePath(absl::string_view relative_path) {
   return file::JoinPath(GetTestRootDir(), relative_path);
 }
 
-absl::StatusOr<std::unique_ptr<ImageFrame>> LoadTestImage(
-    absl::string_view path, ImageFormat::Format format) {
-  std::string encoded;
-  MP_RETURN_IF_ERROR(mediapipe::file::GetContents(path, &encoded));
-
+absl::StatusOr<std::unique_ptr<ImageFrame>> DecodeTestImage(
+    absl::string_view encoded, ImageFormat::Format format) {
   // stbi_load determines the output pixel format based on the desired channels.
   // 0 means "use whatever's in the file".
   int desired_channels = format == ImageFormat::UNKNOWN ? 0
@@ -244,10 +271,10 @@ absl::StatusOr<std::unique_ptr<ImageFrame>> LoadTestImage(
       << "unsupported output format requested: " << format;
 
   int width, height, channels_in_file;
-  auto data = stbi_load_from_memory(reinterpret_cast<stbi_uc*>(encoded.data()),
-                                    encoded.size(), &width, &height,
-                                    &channels_in_file, desired_channels);
-  RET_CHECK(data) << "failed to decode image data from: " << path;
+  auto data = stbi_load_from_memory(
+      reinterpret_cast<const stbi_uc*>(encoded.data()), encoded.size(), &width,
+      &height, &channels_in_file, desired_channels);
+  RET_CHECK(data) << "failed to decode image data";
 
   // If we didn't specify a desired format, it will be determined by what the
   // file contains.
@@ -265,9 +292,33 @@ absl::StatusOr<std::unique_ptr<ImageFrame>> LoadTestImage(
       format, width, height, width * output_channels, data, stbi_image_free);
 }
 
-std::unique_ptr<ImageFrame> LoadTestPng(const std::string& path,
+absl::StatusOr<std::unique_ptr<ImageFrame>> LoadTestImage(
+    absl::string_view path, ImageFormat::Format format) {
+  std::string encoded;
+  MP_RETURN_IF_ERROR(mediapipe::file::GetContents(path, &encoded));
+  return DecodeTestImage(encoded, format);
+}
+
+std::unique_ptr<ImageFrame> LoadTestPng(absl::string_view path,
                                         ImageFormat::Format format) {
   return nullptr;
+}
+
+// Write an ImageFrame as PNG to the test undeclared outputs directory.
+// The image's name will contain the given prefix and a timestamp.
+// Returns the path to the output if successful.
+absl::StatusOr<std::string> SavePngTestOutput(
+    const mediapipe::ImageFrame& image, absl::string_view prefix) {
+  std::string now_string = absl::FormatTime(absl::Now());
+  std::string output_relative_path =
+      absl::StrCat(prefix, "_", now_string, ".png");
+  std::string output_full_path =
+      file::JoinPath(GetTestOutputsDir(), output_relative_path);
+  RET_CHECK(stbi_write_png(output_full_path.c_str(), image.Width(),
+                           image.Height(), image.NumberOfChannels(),
+                           image.PixelData(), image.WidthStep()))
+      << " path: " << output_full_path;
+  return output_relative_path;
 }
 
 bool LoadTestGraph(CalculatorGraphConfig* proto, const std::string& path) {

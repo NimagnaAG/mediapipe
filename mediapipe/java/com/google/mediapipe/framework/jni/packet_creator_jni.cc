@@ -17,6 +17,8 @@
 #include <cstring>
 #include <memory>
 
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "mediapipe/framework/calculator.pb.h"
 #include "mediapipe/framework/camera_intrinsics.h"
 #include "mediapipe/framework/formats/image.h"
@@ -27,12 +29,12 @@
 #include "mediapipe/framework/formats/video_stream_header.h"
 #include "mediapipe/framework/port/core_proto_inc.h"
 #include "mediapipe/framework/port/logging.h"
-#include "mediapipe/gpu/gpu_buffer.h"
 #include "mediapipe/java/com/google/mediapipe/framework/jni/colorspace.h"
 #include "mediapipe/java/com/google/mediapipe/framework/jni/graph.h"
 #include "mediapipe/java/com/google/mediapipe/framework/jni/jni_util.h"
 #if !MEDIAPIPE_DISABLE_GPU
 #include "mediapipe/gpu/gl_calculator_helper.h"
+#include "mediapipe/gpu/gpu_buffer.h"
 #endif  // !MEDIAPIPE_DISABLE_GPU
 
 namespace {
@@ -57,14 +59,15 @@ int64_t CreatePacketWithContext(jlong context,
 }
 
 #if !MEDIAPIPE_DISABLE_GPU
-mediapipe::GpuBuffer CreateGpuBuffer(JNIEnv* env, jobject thiz, jlong context,
-                                     jint name, jint width, jint height,
-                                     jobject texture_release_callback) {
+absl::StatusOr<mediapipe::GpuBuffer> CreateGpuBuffer(
+    JNIEnv* env, jobject thiz, jlong context, jint name, jint width,
+    jint height, jobject texture_release_callback) {
   mediapipe::android::Graph* mediapipe_graph =
       reinterpret_cast<mediapipe::android::Graph*>(context);
   auto* gpu_resources = mediapipe_graph->GetGpuResources();
-  CHECK(gpu_resources) << "Cannot create a mediapipe::GpuBuffer packet on a "
-                          "graph without GPU support";
+  RET_CHECK(gpu_resources)
+      << "Cannot create a mediapipe::GpuBuffer packet on a "
+         "graph without GPU support";
   mediapipe::GlTextureBuffer::DeletionCallback cc_callback;
 
   if (texture_release_callback) {
@@ -78,7 +81,7 @@ mediapipe::GpuBuffer CreateGpuBuffer(JNIEnv* env, jobject thiz, jlong context,
                          "(JL"
                          "com/google/mediapipe/framework/TextureReleaseCallback"
                          ";)V");
-    CHECK(release_method);
+    RET_CHECK(release_method);
     env->DeleteLocalRef(my_class);
 
     jobject java_callback = env->NewGlobalRef(texture_release_callback);
@@ -106,55 +109,31 @@ mediapipe::GpuBuffer CreateGpuBuffer(JNIEnv* env, jobject thiz, jlong context,
 
 // Create a 1, 3, or 4 channel 8-bit ImageFrame shared pointer from a Java
 // ByteBuffer.
-std::unique_ptr<mediapipe::ImageFrame> CreateImageFrameFromByteBuffer(
-    JNIEnv* env, jobject byte_buffer, jint width, jint height,
-    mediapipe::ImageFormat::Format format) {
-  switch (format) {
-    case mediapipe::ImageFormat::SRGBA:
-    case mediapipe::ImageFormat::SRGB:
-    case mediapipe::ImageFormat::GRAY8:
-      break;
-    default:
-      LOG(ERROR) << "Format must be either SRGBA, SRGB, or GRAY8.";
-      return nullptr;
-  }
-
-  auto image_frame = std::make_unique<mediapipe::ImageFrame>(
-      format, width, height,
-      mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
-
+absl::StatusOr<std::unique_ptr<mediapipe::ImageFrame>>
+CreateImageFrameFromByteBuffer(JNIEnv* env, jobject byte_buffer, jint width,
+                               jint height, jint width_step,
+                               mediapipe::ImageFormat::Format format) {
   const int64_t buffer_size = env->GetDirectBufferCapacity(byte_buffer);
-  const int num_channels = image_frame->NumberOfChannels();
-  const int expected_buffer_size =
-      num_channels == 1 ? width * height : image_frame->PixelDataSize();
-
-  if (buffer_size != expected_buffer_size) {
-    if (num_channels != 1)
-      LOG(ERROR) << "The input image buffer should have 4 bytes alignment.";
-    LOG(ERROR) << "Please check the input buffer size.";
-    LOG(ERROR) << "Buffer size: " << buffer_size
-               << ", Buffer size needed: " << expected_buffer_size
-               << ", Image width: " << width;
-    return nullptr;
+  const void* buffer_data = env->GetDirectBufferAddress(byte_buffer);
+  if (buffer_data == nullptr || buffer_size < 0) {
+    return absl::InvalidArgumentError(
+        "Cannot get direct access to the input buffer. It should be created "
+        "using allocateDirect.");
   }
 
-  // Copy buffer data to image frame's pixel_data_.
-  if (num_channels == 1) {
-    const int width_step = image_frame->WidthStep();
-    const char* src_row =
-        reinterpret_cast<const char*>(env->GetDirectBufferAddress(byte_buffer));
-    char* dst_row = reinterpret_cast<char*>(image_frame->MutablePixelData());
-    for (int i = height; i > 0; --i) {
-      std::memcpy(dst_row, src_row, width);
-      src_row += width;
-      dst_row += width_step;
-    }
-  } else {
-    // 3 and 4 channels.
-    const void* buffer_data = env->GetDirectBufferAddress(byte_buffer);
-    std::memcpy(image_frame->MutablePixelData(), buffer_data,
-                image_frame->PixelDataSize());
-  }
+  const int expected_buffer_size = height * width_step;
+  RET_CHECK_EQ(buffer_size, expected_buffer_size)
+      << "Input buffer size should be " << expected_buffer_size
+      << " but is: " << buffer_size;
+
+  auto image_frame = std::make_unique<mediapipe::ImageFrame>();
+  // TODO: we could retain the buffer with a special deleter and use
+  // the data directly without a copy. May need a new Java API since existing
+  // code might expect to be able to overwrite the buffer after creating an
+  // ImageFrame from it.
+  image_frame->CopyPixelData(
+      format, width, height, width_step, static_cast<const uint8*>(buffer_data),
+      mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
 
   return image_frame;
 }
@@ -175,77 +154,83 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateReferencePacket)(
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateRgbImage)(
     JNIEnv* env, jobject thiz, jlong context, jobject byte_buffer, jint width,
     jint height) {
-  auto image_frame = CreateImageFrameFromByteBuffer(
-      env, byte_buffer, width, height, mediapipe::ImageFormat::SRGB);
-  if (nullptr == image_frame) return 0L;
+  // We require 4-byte alignment. See Java method.
+  constexpr int kAlignment = 4;
+  int width_step = ((width * 3 - 1) | (kAlignment - 1)) + 1;
+  auto image_frame_or =
+      CreateImageFrameFromByteBuffer(env, byte_buffer, width, height,
+                                     width_step, mediapipe::ImageFormat::SRGB);
+  if (ThrowIfError(env, image_frame_or.status())) return 0L;
 
-  mediapipe::Packet packet = mediapipe::Adopt(image_frame.release());
+  mediapipe::Packet packet = mediapipe::Adopt(image_frame_or->release());
   return CreatePacketWithContext(context, packet);
+}
+
+absl::StatusOr<std::unique_ptr<mediapipe::ImageFrame>> CreateRgbImageFromRgba(
+    JNIEnv* env, jobject byte_buffer, jint width, jint height) {
+  const uint8_t* rgba_data =
+      static_cast<uint8_t*>(env->GetDirectBufferAddress(byte_buffer));
+  int64_t buffer_size = env->GetDirectBufferCapacity(byte_buffer);
+  if (rgba_data == nullptr || buffer_size < 0) {
+    return absl::InvalidArgumentError(
+        "Cannot get direct access to the input buffer. It should be created "
+        "using allocateDirect.");
+  }
+
+  const int expected_buffer_size = width * height * 4;
+  RET_CHECK_EQ(buffer_size, expected_buffer_size)
+      << "Input buffer size should be " << expected_buffer_size
+      << " but is: " << buffer_size;
+
+  auto image_frame = absl::make_unique<mediapipe::ImageFrame>(
+      mediapipe::ImageFormat::SRGB, width, height,
+      mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
+  mediapipe::android::RgbaToRgb(rgba_data, width * 4, width, height,
+                                image_frame->MutablePixelData(),
+                                image_frame->WidthStep());
+  return image_frame;
 }
 
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateRgbImageFromRgba)(
     JNIEnv* env, jobject thiz, jlong context, jobject byte_buffer, jint width,
     jint height) {
-  const uint8_t* rgba_data =
-      static_cast<uint8_t*>(env->GetDirectBufferAddress(byte_buffer));
-  auto image_frame = absl::make_unique<mediapipe::ImageFrame>(
-      mediapipe::ImageFormat::SRGB, width, height,
-      mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
-  int64_t buffer_size = env->GetDirectBufferCapacity(byte_buffer);
-  if (buffer_size != width * height * 4) {
-    LOG(ERROR) << "Please check the input buffer size.";
-    LOG(ERROR) << "Buffer size: " << buffer_size
-               << ", Buffer size needed: " << width * height * 4
-               << ", Image width: " << width;
-    return 0L;
-  }
-  mediapipe::android::RgbaToRgb(rgba_data, width * 4, width, height,
-                                image_frame->MutablePixelData(),
-                                image_frame->WidthStep());
-  mediapipe::Packet packet = mediapipe::Adopt(image_frame.release());
+  auto image_frame_or = CreateRgbImageFromRgba(env, byte_buffer, width, height);
+  if (ThrowIfError(env, image_frame_or.status())) return 0L;
+
+  mediapipe::Packet packet = mediapipe::Adopt(image_frame_or->release());
   return CreatePacketWithContext(context, packet);
 }
 
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateGrayscaleImage)(
     JNIEnv* env, jobject thiz, jlong context, jobject byte_buffer, jint width,
     jint height) {
-  auto image_frame = CreateImageFrameFromByteBuffer(
-      env, byte_buffer, width, height, mediapipe::ImageFormat::GRAY8);
-  if (nullptr == image_frame) return 0L;
+  auto image_frame_or = CreateImageFrameFromByteBuffer(
+      env, byte_buffer, width, height, width, mediapipe::ImageFormat::GRAY8);
+  if (ThrowIfError(env, image_frame_or.status())) return 0L;
 
-  mediapipe::Packet packet = mediapipe::Adopt(image_frame.release());
+  mediapipe::Packet packet = mediapipe::Adopt(image_frame_or->release());
   return CreatePacketWithContext(context, packet);
 }
 
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateFloatImageFrame)(
     JNIEnv* env, jobject thiz, jlong context, jobject byte_buffer, jint width,
     jint height) {
-  const void* data = env->GetDirectBufferAddress(byte_buffer);
-  auto image_frame = absl::make_unique<mediapipe::ImageFrame>(
-      mediapipe::ImageFormat::VEC32F1, width, height,
-      mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
-  int64_t buffer_size = env->GetDirectBufferCapacity(byte_buffer);
-  if (buffer_size != image_frame->PixelDataSize()) {
-    LOG(ERROR) << "Please check the input buffer size.";
-    LOG(ERROR) << "Buffer size: " << buffer_size
-               << ", Buffer size needed: " << image_frame->PixelDataSize()
-               << ", Image width: " << width;
-    return 0L;
-  }
-  std::memcpy(image_frame->MutablePixelData(), data,
-              image_frame->PixelDataSize());
-  mediapipe::Packet packet = mediapipe::Adopt(image_frame.release());
+  auto image_frame_or =
+      CreateImageFrameFromByteBuffer(env, byte_buffer, width, height, width * 4,
+                                     mediapipe::ImageFormat::VEC32F1);
+  if (ThrowIfError(env, image_frame_or.status())) return 0L;
+  mediapipe::Packet packet = mediapipe::Adopt(image_frame_or->release());
   return CreatePacketWithContext(context, packet);
 }
 
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateRgbaImageFrame)(
     JNIEnv* env, jobject thiz, jlong context, jobject byte_buffer, jint width,
     jint height) {
-  auto image_frame = CreateImageFrameFromByteBuffer(
-      env, byte_buffer, width, height, mediapipe::ImageFormat::SRGBA);
-  if (nullptr == image_frame) return 0L;
-
-  mediapipe::Packet packet = mediapipe::Adopt(image_frame.release());
+  auto image_frame_or =
+      CreateImageFrameFromByteBuffer(env, byte_buffer, width, height, width * 4,
+                                     mediapipe::ImageFormat::SRGBA);
+  if (ThrowIfError(env, image_frame_or.status())) return 0L;
+  mediapipe::Packet packet = mediapipe::Adopt(image_frame_or->release());
   return CreatePacketWithContext(context, packet);
 }
 
@@ -256,9 +241,13 @@ static mediapipe::Packet createAudioPacket(const uint8_t* audio_sample,
   // Preparing and normalize the audio data.
   // kMultiplier is same as what used in av_sync_media_decoder.cc.
   static const float kMultiplier = 1.f / (1 << 15);
-  // We try to not assume the Endian order of the data.
   for (int sample = 0; sample < num_samples; ++sample) {
     for (int channel = 0; channel < num_channels; ++channel) {
+      // MediaPipe createAudioPacket can currently only handle
+      // AudioFormat.ENCODING_PCM_16BIT data, so here we are reading 2 bytes per
+      // sample, using ByteOrder.LITTLE_ENDIAN byte order, which is
+      // ByteOrder.nativeOrder() on Android
+      // (https://developer.android.com/ndk/guides/abis.html).
       int16_t value = (audio_sample[1] & 0xff) << 8 | audio_sample[0];
       (*matrix)(channel, sample) = kMultiplier * value;
       audio_sample += 2;
@@ -286,6 +275,12 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateAudioPacketDirect)(
     jint num_samples) {
   const uint8_t* audio_sample =
       reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(data));
+  if (!audio_sample) {
+    ThrowIfError(env, absl::InvalidArgumentError(
+                          "Cannot get direct access to the input buffer. It "
+                          "should be created using allocateDirect."));
+    return 0L;
+  }
   mediapipe::Packet packet =
       createAudioPacket(audio_sample, num_samples, num_channels);
   return CreatePacketWithContext(context, packet);
@@ -355,13 +350,20 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateMatrix)(
     JNIEnv* env, jobject thiz, jlong context, jint rows, jint cols,
     jfloatArray data) {
   if (env->GetArrayLength(data) != rows * cols) {
-    LOG(ERROR) << "Please check the matrix data size, has to be rows * cols = "
-               << rows * cols;
+    ThrowIfError(
+        env, absl::InvalidArgumentError(absl::StrCat(
+                 "Please check the matrix data size, has to be rows * cols = ",
+                 rows * cols)));
     return 0L;
   }
   std::unique_ptr<mediapipe::Matrix> matrix(new mediapipe::Matrix(rows, cols));
-  // The java and native has the same byte order, by default is little Endian,
-  // we can safely copy data directly, we have tests to cover this.
+  // Android is always
+  // little-endian(https://developer.android.com/ndk/guides/abis.html), even
+  // though Java's ByteBuffer defaults to
+  // big-endian(https://docs.oracle.com/javase/7/docs/api/java/nio/ByteBuffer.html),
+  // there is no Java ByteBuffer involved, JNI does not change the endianness(we
+  // have PacketGetterTest.testEndianOrder() to cover this case), so we can
+  // safely copy data directly here.
   env->GetFloatArrayRegion(data, 0, rows * cols, matrix->data());
   mediapipe::Packet packet = mediapipe::Adopt(matrix.release());
   return CreatePacketWithContext(context, packet);
@@ -369,7 +371,7 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateMatrix)(
 
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateCpuImage)(
     JNIEnv* env, jobject thiz, jlong context, jobject byte_buffer, jint width,
-    jint height, jint num_channels) {
+    jint height, jint width_step, jint num_channels) {
   mediapipe::ImageFormat::Format format;
   switch (num_channels) {
     case 4:
@@ -382,16 +384,18 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateCpuImage)(
       format = mediapipe::ImageFormat::GRAY8;
       break;
     default:
-      LOG(ERROR) << "Channels must be either 1, 3, or 4.";
+      ThrowIfError(env, absl::InvalidArgumentError(absl::StrCat(
+                            "Channels must be either 1, 3, or 4, but are ",
+                            num_channels)));
       return 0L;
   }
 
-  auto image_frame =
-      CreateImageFrameFromByteBuffer(env, byte_buffer, width, height, format);
-  if (nullptr == image_frame) return 0L;
+  auto image_frame_or = CreateImageFrameFromByteBuffer(
+      env, byte_buffer, width, height, width_step, format);
+  if (ThrowIfError(env, image_frame_or.status())) return 0L;
 
   mediapipe::Packet packet =
-      mediapipe::MakePacket<mediapipe::Image>(std::move(image_frame));
+      mediapipe::MakePacket<mediapipe::Image>(*std::move(image_frame_or));
   return CreatePacketWithContext(context, packet);
 }
 
@@ -400,18 +404,22 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateCpuImage)(
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateGpuImage)(
     JNIEnv* env, jobject thiz, jlong context, jint name, jint width,
     jint height, jobject texture_release_callback) {
-  mediapipe::Packet image_packet =
-      mediapipe::MakePacket<mediapipe::Image>(CreateGpuBuffer(
-          env, thiz, context, name, width, height, texture_release_callback));
-  return CreatePacketWithContext(context, image_packet);
+  auto buffer_or = CreateGpuBuffer(env, thiz, context, name, width, height,
+                                   texture_release_callback);
+  if (ThrowIfError(env, buffer_or.status())) return 0L;
+  mediapipe::Packet packet =
+      mediapipe::MakePacket<mediapipe::Image>(std::move(buffer_or).value());
+  return CreatePacketWithContext(context, packet);
 }
 
 JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateGpuBuffer)(
     JNIEnv* env, jobject thiz, jlong context, jint name, jint width,
     jint height, jobject texture_release_callback) {
+  auto buffer_or = CreateGpuBuffer(env, thiz, context, name, width, height,
+                                   texture_release_callback);
+  if (ThrowIfError(env, buffer_or.status())) return 0L;
   mediapipe::Packet packet =
-      mediapipe::MakePacket<mediapipe::GpuBuffer>(CreateGpuBuffer(
-          env, thiz, context, name, width, height, texture_release_callback));
+      mediapipe::MakePacket<mediapipe::GpuBuffer>(std::move(buffer_or).value());
   return CreatePacketWithContext(context, packet);
 }
 
@@ -488,7 +496,8 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateCalculatorOptions)(
   jbyte* data_ref = env->GetByteArrayElements(data, nullptr);
   auto options = absl::make_unique<mediapipe::CalculatorOptions>();
   if (!options->ParseFromArray(data_ref, count)) {
-    LOG(ERROR) << "Parsing binary-encoded CalculatorOptions failed.";
+    ThrowIfError(env, absl::InvalidArgumentError(absl::StrCat(
+                          "Parsing binary-encoded CalculatorOptions failed.")));
     return 0L;
   }
   mediapipe::Packet packet = mediapipe::Adopt(options.release());
