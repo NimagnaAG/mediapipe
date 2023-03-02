@@ -43,6 +43,10 @@ windows_dll_library(
 # **Implicitly link to face_mesh_lib.dll**
 cc_binary(
     name = "pose_tracking_cpu",
+	# Linking the dll will cause certain symbols to be found twice 
+	# since the .exe also links to the static libraries directly.
+	# Therefore, we ignore that to have no warnings/errors.
+	# This does not affect the DLL.
 	linkopts = ["/FORCE:MULTIPLE"],
     deps = [
         "//mediapipe/examples/desktop:demo_run_graph_main",
