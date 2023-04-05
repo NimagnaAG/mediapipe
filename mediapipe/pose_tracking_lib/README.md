@@ -15,8 +15,8 @@ Otherwise, please also read the guidelines on the official Mediapipe website: ht
 
 ## Build instructions
 
-- [Build DLL for Windows](https://github.com/NimagnaAG/mediapipe/tree/master/mediapipe/pose_tracking_dll#windows)
-- [Build DYLIB for MacOS](https://github.com/NimagnaAG/mediapipe/tree/master/mediapipe/pose_tracking_dll#macos)
+- [Build DLL for Windows](#windows)
+- [Build DYLIB for MacOS](#macos)
 
 # Windows 
 
