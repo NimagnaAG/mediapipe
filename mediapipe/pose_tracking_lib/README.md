@@ -185,6 +185,6 @@ Note: `<REPO_ROOT>mediapipe/third-party/opencv_macos.BUILD` should have an empty
 ## Build .dylib
 
 - `cd <REPO_ROOT>mediapipe`
-- `<BAZEL_PATH>/bazel build -c opt --define MEDIAPIPE_DISABLE_GPU=1 mediapipe/pose_tracking_lib:libpose_tracking_cpu_macos.dylib`
+- `<BAZEL_PATH>/bazel build -c opt --define MEDIAPIPE_DISABLE_GPU=1 --macos_minimum_os 12.0 mediapipe/pose_tracking_lib:libpose_tracking_cpu_macos.dylib`
 - The build output will be created in `<REPO_ROOT>/mediapipe/bazel-bin/mediapipe/pose_tracking_lib`
 
