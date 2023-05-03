@@ -21,7 +21,7 @@ set "LOCALAPPDATA_FORWARDSLASH=%LOCALAPPDATA:\=/%"
 SET BAZEL_PATH=E:\repos\bazel\5.4.0
 
 :: Release [opt] or Debug [dbg]
-SET MEDIAPIPE_CONFIGURATION=dbg
+SET MEDIAPIPE_CONFIGURATION=opt
 
 :: path to msys 
 SET MYSYS_PATH=C:\msys64\usr\bin
@@ -48,7 +48,7 @@ SET BAZEL_PYTHON_PATH=%LOCALAPPDATA_FORWARDSLASH%/Programs/Python/Python311/pyth
 SET BAZEL_TMP_BUILD_DIR=E:\repos\mp_output
 
 :: Optional: The path to the external repository to copy the output files
-SET EXTERNAL_PATH=C:\Users\ChristophNiederberge\source\repos\CodeReviews\external
+SET EXTERNAL_PATH=C:\Users\ChristophNiederberge\source\repos\external_windows_x64
 :: The current Mediapipe version to set the correct external subfolder name
 SET MEDIAPIPE_VERSION=0.9.1
 
@@ -58,9 +58,9 @@ SET MEDIAPIPE_VERSION=0.9.1
 
 IF NOT [%BAZEL_TMP_BUILD_DIR%]==[] (
     ECHO Using temporary build directory: %BAZEL_TMP_BUILD_DIR%
-	bazel --output_base "%BAZEL_TMP_BUILD_DIR%" build -c %MEDIAPIPE_CONFIGURATION% --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_lib:pose_tracking_cpu
+	bazel --output_base "%BAZEL_TMP_BUILD_DIR%" build -c %MEDIAPIPE_CONFIGURATION% --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_lib:pose_tracking_cpu_windows
 ) ELSE (
-	bazel build -c  %MEDIAPIPE_CONFIGURATION%  --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_lib:pose_tracking_cpu
+	bazel build -c  %MEDIAPIPE_CONFIGURATION%  --define MEDIAPIPE_DISABLE_GPU=1 --action_env PYTHON_BIN_PATH="%BAZEL_PYTHON_PATH%" mediapipe/pose_tracking_lib:pose_tracking_cpu_windows
 )
 
 :: ----------------------------------------------------------
