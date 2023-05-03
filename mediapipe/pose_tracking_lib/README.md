@@ -70,7 +70,7 @@ Install Mediapipe development environment as follows.
 ### Prepare Build
 
 - Edit the `MEDIAPIPEDIR\WORKSPACE` file: 
-  - Around line 215, is the "windows_opencv" repository. 
+  - Around line 284, is the "windows_opencv" repository. 
   - Adapt the path to point to `OPENCVDIR\\build` (using double backslashes):
   ```
   new_local_repository(
