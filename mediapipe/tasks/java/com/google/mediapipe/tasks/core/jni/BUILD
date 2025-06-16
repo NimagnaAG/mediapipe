@@ -1,4 +1,4 @@
-# Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2022 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,12 @@
 
 load("@org_tensorflow//tensorflow/lite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")
 
-package(default_visibility = ["//mediapipe/tasks:internal"])
+package(default_visibility = [
+    "//java/com/google/android/apps/inputmethod/latin:__subpackages__",
+    "//javatests/com/google/android/apps/inputmethod:__subpackages__",
+    "//mediapipe/tasks:internal",
+    "//third_party/generative_computing:__subpackages__",
+])
 
 licenses(["notice"])
 
@@ -25,16 +30,24 @@ cc_library_with_tflite(
     ],
     hdrs = [
         "model_resources_cache_jni.h",
-    ],
+    ] + select({
+        "//conditions:default": [
+            ":jni.h",
+            ":jni_md.h",
+        ],
+        # The Android toolchain makes "jni.h" available in the include path.
+        # For non-Android toolchains, generate jni.h and jni_md.h.
+        "//mediapipe:android": [],
+    }),
     tflite_deps = [
         "//mediapipe/tasks/cc/core:model_resources_cache",
-        "@org_tensorflow//tensorflow/lite/core/shims:builtin_ops",
     ],
     deps = [
         "//mediapipe/java/com/google/mediapipe/framework/jni:mediapipe_framework_jni",
         "//mediapipe/tasks/cc/core:mediapipe_builtin_op_resolver",
     ] + select({
-        "//conditions:default": ["//third_party/java/jdk:jni"],
+        "//conditions:default": [
+        ],
         "//mediapipe:android": [],
     }),
     alwayslink = 1,

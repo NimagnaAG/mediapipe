@@ -24,7 +24,7 @@ load(
 
 licenses(["notice"])
 
-MIN_IOS_VERSION = "11.0"
+MIN_IOS_VERSION = "12.0"
 
 alias(
     name = "posetrackinggpu",
@@ -59,7 +59,6 @@ objc_library(
     hdrs = [
         "PoseTrackingViewController.h",
     ],
-    copts = ["-std=c++17"],
     data = [
         "//mediapipe/graphs/pose_tracking:pose_tracking_gpu.binarypb",
         "//mediapipe/modules/pose_detection:pose_detection.tflite",

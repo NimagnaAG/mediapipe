@@ -227,6 +227,45 @@ class PacketTest(absltest.TestCase):
                                                         offset:-offset, :]))
     self.assertEqual(p.timestamp, 100)
 
+  def test_image_frame_vector_packet(self):
+    mat_rgb = np.random.randint(2**8 - 1, size=(30, 40, 3), dtype=np.uint8)
+    mat_float = np.random.random(size=(40, 30)).astype(np.float32)
+    p = packet_creator.create_image_frame_vector([
+        ImageFrame(image_format=ImageFormat.SRGB, data=mat_rgb),
+        ImageFrame(image_format=ImageFormat.VEC32F1, data=mat_float),
+    ]).at(100)
+    output_list = packet_getter.get_image_frame_list(p)
+    self.assertLen(output_list, 2)
+    self.assertTrue(np.array_equal(output_list[0].numpy_view(), mat_rgb))
+    self.assertTrue(np.array_equal(output_list[1].numpy_view(), mat_float))
+    self.assertEqual(p.timestamp, 100)
+
+  def test_get_image_frame_list_packet_capture(self):
+    h, w, c = 30, 40, 3
+    p = packet_creator.create_image_frame_vector([
+        ImageFrame(
+            image_format=ImageFormat.SRGB,
+            data=np.ones((h, w, c), dtype=np.uint8),
+        ),
+    ]).at(100)
+    output_list = packet_getter.get_image_frame_list(p)
+    # Even if the packet variable p gets deleted, the packet object still exists
+    # because it is captured by the deleter of the ImageFrame in the returned
+    # output_list.
+    del p
+    gc.collect()
+    self.assertLen(output_list, 1)
+    self.assertEqual(output_list[0].image_format, ImageFormat.SRGB)
+    self.assertTrue(
+        np.array_equal(
+            output_list[0].numpy_view(), np.ones((h, w, c), dtype=np.uint8)
+        )
+    )
+
+  def test_create_image_frame_vector_type_error(self):
+    with self.assertRaisesRegex(TypeError, 'not an ImageFrame'):
+      packet_creator.create_image_frame_vector([None])
+
   def test_string_vector_packet(self):
     p = packet_creator.create_string_vector(['a', 'b', 'c']).at(100)
     output_list = packet_getter.get_str_list(p)

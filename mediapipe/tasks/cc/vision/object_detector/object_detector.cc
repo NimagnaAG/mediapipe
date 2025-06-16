@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -107,6 +107,10 @@ std::unique_ptr<ObjectDetectorOptionsProto> ConvertObjectDetectorOptionsToProto(
   for (const std::string& category : options->category_denylist) {
     options_proto->add_category_denylist(category);
   }
+  options_proto->set_multiclass_nms(
+      options->non_max_suppression_options.multiclass_nms);
+  options_proto->set_min_suppression_threshold(
+      options->non_max_suppression_options.min_suppression_threshold);
   return options_proto;
 }
 
@@ -129,9 +133,17 @@ absl::StatusOr<std::unique_ptr<ObjectDetector>> ObjectDetector::Create(
           if (status_or_packets.value()[kImageOutStreamName].IsEmpty()) {
             return;
           }
+          Packet image_packet = status_or_packets.value()[kImageOutStreamName];
           Packet detections_packet =
               status_or_packets.value()[kDetectionsOutStreamName];
-          Packet image_packet = status_or_packets.value()[kImageOutStreamName];
+          if (detections_packet.IsEmpty()) {
+            Packet empty_packet =
+                status_or_packets.value()[kDetectionsOutStreamName];
+            result_callback(
+                {ConvertToDetectionResult({})}, image_packet.Get<Image>(),
+                empty_packet.Timestamp().Value() / kMicroSecondsPerMilliSecond);
+            return;
+          }
           result_callback(ConvertToDetectionResult(
                               detections_packet.Get<std::vector<Detection>>()),
                           image_packet.Get<Image>(),
@@ -145,7 +157,9 @@ absl::StatusOr<std::unique_ptr<ObjectDetector>> ObjectDetector::Create(
           std::move(options_proto),
           options->running_mode == core::RunningMode::LIVE_STREAM),
       std::move(options->base_options.op_resolver), options->running_mode,
-      std::move(packets_callback));
+      std::move(packets_callback),
+      /*disable_default_service=*/
+      options->base_options.disable_default_service);
 }
 
 absl::StatusOr<ObjectDetectorResult> ObjectDetector::Detect(
@@ -157,20 +171,23 @@ absl::StatusOr<ObjectDetectorResult> ObjectDetector::Detect(
         absl::StrCat("GPU input images are currently not supported."),
         MediaPipeTasksStatus::kRunnerUnexpectedInputError);
   }
-  ASSIGN_OR_RETURN(
-      NormalizedRect norm_rect,
-      ConvertToNormalizedRect(image_processing_options, /*roi_allowed=*/false));
-  ASSIGN_OR_RETURN(
+  MP_ASSIGN_OR_RETURN(NormalizedRect norm_rect,
+                      ConvertToNormalizedRect(image_processing_options, image,
+                                              /*roi_allowed=*/false));
+  MP_ASSIGN_OR_RETURN(
       auto output_packets,
       ProcessImageData(
           {{kImageInStreamName, MakePacket<Image>(std::move(image))},
            {kNormRectName, MakePacket<NormalizedRect>(std::move(norm_rect))}}));
+  if (output_packets[kDetectionsOutStreamName].IsEmpty()) {
+    return {ConvertToDetectionResult({})};
+  }
   return ConvertToDetectionResult(
       output_packets[kDetectionsOutStreamName].Get<std::vector<Detection>>());
 }
 
 absl::StatusOr<ObjectDetectorResult> ObjectDetector::DetectForVideo(
-    mediapipe::Image image, int64 timestamp_ms,
+    mediapipe::Image image, int64_t timestamp_ms,
     std::optional<core::ImageProcessingOptions> image_processing_options) {
   if (image.UsesGpu()) {
     return CreateStatusWithPayload(
@@ -178,10 +195,10 @@ absl::StatusOr<ObjectDetectorResult> ObjectDetector::DetectForVideo(
         absl::StrCat("GPU input images are currently not supported."),
         MediaPipeTasksStatus::kRunnerUnexpectedInputError);
   }
-  ASSIGN_OR_RETURN(
-      NormalizedRect norm_rect,
-      ConvertToNormalizedRect(image_processing_options, /*roi_allowed=*/false));
-  ASSIGN_OR_RETURN(
+  MP_ASSIGN_OR_RETURN(NormalizedRect norm_rect,
+                      ConvertToNormalizedRect(image_processing_options, image,
+                                              /*roi_allowed=*/false));
+  MP_ASSIGN_OR_RETURN(
       auto output_packets,
       ProcessVideoData(
           {{kImageInStreamName,
@@ -190,12 +207,15 @@ absl::StatusOr<ObjectDetectorResult> ObjectDetector::DetectForVideo(
            {kNormRectName,
             MakePacket<NormalizedRect>(std::move(norm_rect))
                 .At(Timestamp(timestamp_ms * kMicroSecondsPerMilliSecond))}}));
+  if (output_packets[kDetectionsOutStreamName].IsEmpty()) {
+    return {ConvertToDetectionResult({})};
+  }
   return ConvertToDetectionResult(
       output_packets[kDetectionsOutStreamName].Get<std::vector<Detection>>());
 }
 
 absl::Status ObjectDetector::DetectAsync(
-    Image image, int64 timestamp_ms,
+    Image image, int64_t timestamp_ms,
     std::optional<core::ImageProcessingOptions> image_processing_options) {
   if (image.UsesGpu()) {
     return CreateStatusWithPayload(
@@ -203,9 +223,9 @@ absl::Status ObjectDetector::DetectAsync(
         absl::StrCat("GPU input images are currently not supported."),
         MediaPipeTasksStatus::kRunnerUnexpectedInputError);
   }
-  ASSIGN_OR_RETURN(
-      NormalizedRect norm_rect,
-      ConvertToNormalizedRect(image_processing_options, /*roi_allowed=*/false));
+  MP_ASSIGN_OR_RETURN(NormalizedRect norm_rect,
+                      ConvertToNormalizedRect(image_processing_options, image,
+                                              /*roi_allowed=*/false));
   return SendLiveStreamData(
       {{kImageInStreamName,
         MakePacket<Image>(std::move(image))

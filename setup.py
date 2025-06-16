@@ -1,4 +1,4 @@
-"""Copyright 2020-2022 The MediaPipe Authors. All Rights Reserved.
+"""Copyright 2020-2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import os
 import platform
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -30,11 +31,28 @@ from setuptools.command import build_py
 from setuptools.command import install
 
 __version__ = 'dev'
+MP_DISABLE_GPU = os.environ.get('MEDIAPIPE_DISABLE_GPU') != '0'
 IS_WINDOWS = (platform.system() == 'Windows')
+IS_MAC = (platform.system() == 'Darwin')
 MP_ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 MP_DIR_INIT_PY = os.path.join(MP_ROOT_PATH, 'mediapipe/__init__.py')
 MP_THIRD_PARTY_BUILD = os.path.join(MP_ROOT_PATH, 'third_party/BUILD')
 MP_ROOT_INIT_PY = os.path.join(MP_ROOT_PATH, '__init__.py')
+
+GPU_OPTIONS_DISBALED = ['--define=MEDIAPIPE_DISABLE_GPU=1']
+
+GPU_OPTIONS_ENBALED = [
+    '--copt=-DTFLITE_GPU_EXTRA_GLES_DEPS',
+    '--copt=-DMEDIAPIPE_OMIT_EGL_WINDOW_BIT',
+    '--copt=-DMESA_EGL_NO_X11_HEADERS',
+    '--copt=-DEGL_NO_X11',
+]
+if IS_MAC:
+  GPU_OPTIONS_ENBALED.append(
+      '--copt=-DMEDIAPIPE_GPU_BUFFER_USE_CV_PIXEL_BUFFER'
+  )
+
+GPU_OPTIONS = GPU_OPTIONS_DISBALED if MP_DISABLE_GPU else GPU_OPTIONS_ENBALED
 
 
 def _normalize_path(path):
@@ -138,6 +156,16 @@ def _copy_to_build_lib_dir(build_lib, file):
   shutil.copyfile(os.path.join('bazel-bin/', file), dst)
 
 
+def _invoke_shell_command(shell_commands):
+  """Invokes shell command from the list of arguments."""
+  print('Invoking:', shlex.join(shell_commands))
+  try:
+    subprocess.run(shell_commands, check=True)
+  except subprocess.CalledProcessError as e:
+    print(e)
+    sys.exit(e.returncode)
+
+
 class GeneratePyProtos(build_ext.build_ext):
   """Generate MediaPipe Python protobuf files by Protocol Compiler."""
 
@@ -202,8 +230,7 @@ class GeneratePyProtos(build_ext.build_ext):
           self._protoc, '-I.',
           '--python_out=' + os.path.abspath(self.build_lib), source
       ]
-      if subprocess.call(protoc_command) != 0:
-        sys.exit(-1)
+      _invoke_shell_command(protoc_command)
 
 
 class BuildModules(build_ext.build_ext):
@@ -245,13 +272,14 @@ class BuildModules(build_ext.build_ext):
       self._download_external_file(external_file)
 
     binary_graphs = [
-        'face_detection/face_detection_short_range_cpu',
-        'face_detection/face_detection_full_range_cpu',
-        'face_landmark/face_landmark_front_cpu',
-        'hand_landmark/hand_landmark_tracking_cpu',
-        'holistic_landmark/holistic_landmark_cpu', 'objectron/objectron_cpu',
-        'pose_landmark/pose_landmark_cpu',
-        'selfie_segmentation/selfie_segmentation_cpu'
+        'face_detection/face_detection_short_range_cpu.binarypb',
+        'face_detection/face_detection_full_range_cpu.binarypb',
+        'face_landmark/face_landmark_front_cpu.binarypb',
+        'hand_landmark/hand_landmark_tracking_cpu.binarypb',
+        'holistic_landmark/holistic_landmark_cpu.binarypb',
+        'objectron/objectron_cpu.binarypb',
+        'pose_landmark/pose_landmark_cpu.binarypb',
+        'selfie_segmentation/selfie_segmentation_cpu.binarypb'
     ]
     for elem in binary_graphs:
       binary_graph = os.path.join('mediapipe/modules/', elem)
@@ -266,8 +294,7 @@ class BuildModules(build_ext.build_ext):
         'build',
         external_file,
     ]
-    if subprocess.call(fetch_model_command) != 0:
-      sys.exit(-1)
+    _invoke_shell_command(fetch_model_command)
     _copy_to_build_lib_dir(self.build_lib, external_file)
 
   def _generate_binary_graph(self, binary_graph_target):
@@ -278,36 +305,45 @@ class BuildModules(build_ext.build_ext):
         'build',
         '--compilation_mode=opt',
         '--copt=-DNDEBUG',
-        '--define=MEDIAPIPE_DISABLE_GPU=1',
         '--action_env=PYTHON_BIN_PATH=' + _normalize_path(sys.executable),
         binary_graph_target,
-    ]
+    ] + GPU_OPTIONS
+
     if not self.link_opencv and not IS_WINDOWS:
       bazel_command.append('--define=OPENCV=source')
-    if subprocess.call(bazel_command) != 0:
-      sys.exit(-1)
-    _copy_to_build_lib_dir(self.build_lib, binary_graph_target + '.binarypb')
+
+    _invoke_shell_command(bazel_command)
+    _copy_to_build_lib_dir(self.build_lib, binary_graph_target)
 
 
 class GenerateMetadataSchema(build_ext.build_ext):
   """Generate metadata python schema files."""
 
   def run(self):
-    for target in ['metadata_schema_py', 'schema_py']:
+    for target in [
+        'image_segmenter_metadata_schema_py',
+        'metadata_schema_py',
+        'object_detector_metadata_schema_py',
+        'schema_py',
+    ]:
+
       bazel_command = [
           'bazel',
           'build',
           '--compilation_mode=opt',
-          '--define=MEDIAPIPE_DISABLE_GPU=1',
           '--action_env=PYTHON_BIN_PATH=' + _normalize_path(sys.executable),
           '//mediapipe/tasks/metadata:' + target,
-      ]
-      if subprocess.call(bazel_command) != 0:
-        sys.exit(-1)
+      ] + GPU_OPTIONS
+
+      _invoke_shell_command(bazel_command)
       _copy_to_build_lib_dir(
           self.build_lib,
           'mediapipe/tasks/metadata/' + target + '_generated.py')
-      schema_file = 'mediapipe/tasks/metadata/metadata_schema.fbs'
+    for schema_file in [
+        'mediapipe/tasks/metadata/metadata_schema.fbs',
+        'mediapipe/tasks/metadata/object_detector_metadata_schema.fbs',
+        'mediapipe/tasks/metadata/image_segmenter_metadata_schema.fbs',
+    ]:
       shutil.copyfile(schema_file,
                       os.path.join(self.build_lib + '/', schema_file))
 
@@ -343,11 +379,40 @@ class BuildExtension(build_ext.build_ext):
 
   def run(self):
     _check_bazel()
-    for ext in self.extensions:
-      self._build_binary(ext)
+    if IS_MAC:
+      for ext in self.extensions:
+        target_name = self.get_ext_fullpath(ext.name)
+        # Build x86
+        self._build_binary(
+            ext,
+            ['--cpu=darwin', '--ios_multi_cpus=i386,x86_64,armv7,arm64'],
+        )
+        x86_name = self.get_ext_fullpath(ext.name)
+        # Build Arm64
+        ext.name = ext.name + '.arm64'
+        self._build_binary(
+            ext,
+            ['--cpu=darwin_arm64', '--ios_multi_cpus=i386,x86_64,armv7,arm64'],
+        )
+        arm64_name = self.get_ext_fullpath(ext.name)
+        # Merge architectures
+        lipo_command = [
+            'lipo',
+            '-create',
+            '-output',
+            target_name,
+            x86_name,
+            arm64_name,
+        ]
+        _invoke_shell_command(lipo_command)
+        # Delete the arm64 file (the x86 file was overwritten by lipo)
+        _invoke_shell_command(['rm', arm64_name])
+    else:
+      for ext in self.extensions:
+        self._build_binary(ext)
     build_ext.build_ext.run(self)
 
-  def _build_binary(self, ext):
+  def _build_binary(self, ext, extra_args=None):
     if not os.path.exists(self.build_temp):
       os.makedirs(self.build_temp)
     bazel_command = [
@@ -355,14 +420,17 @@ class BuildExtension(build_ext.build_ext):
         'build',
         '--compilation_mode=opt',
         '--copt=-DNDEBUG',
-        '--define=MEDIAPIPE_DISABLE_GPU=1',
+        '--keep_going',
         '--action_env=PYTHON_BIN_PATH=' + _normalize_path(sys.executable),
         str(ext.bazel_target + '.so'),
-    ]
+    ] + GPU_OPTIONS
+
+    if extra_args:
+      bazel_command += extra_args
     if not self.link_opencv and not IS_WINDOWS:
       bazel_command.append('--define=OPENCV=source')
-    if subprocess.call(bazel_command) != 0:
-      sys.exit(-1)
+
+    _invoke_shell_command(bazel_command)
     ext_bazel_bin_path = os.path.join('bazel-bin', ext.relpath,
                                       ext.target_name + '.so')
     ext_dest_path = self.get_ext_fullpath(ext.name)
@@ -490,10 +558,10 @@ setuptools.setup(
         'Operating System :: MacOS :: MacOS X',
         'Operating System :: Microsoft :: Windows',
         'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3 :: Only',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',

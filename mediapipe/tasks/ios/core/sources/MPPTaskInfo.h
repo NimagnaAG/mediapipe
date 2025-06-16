@@ -22,7 +22,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /**
- * Holds all needed informaton to initialize a MediaPipe Task.
+ * Holds all needed information to initialize a MediaPipe Task.
  */
 @interface MPPTaskInfo : NSObject <NSCopying>
 
@@ -61,7 +61,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Creates a MediaPipe Task  protobuf message from the MPPTaskInfo instance.
  */
-- (::mediapipe::CalculatorGraphConfig)generateGraphConfig;
+- (std::optional<::mediapipe::CalculatorGraphConfig>)generateGraphConfigWithError:(NSError **)error;
 
 - (instancetype)init NS_UNAVAILABLE;
 

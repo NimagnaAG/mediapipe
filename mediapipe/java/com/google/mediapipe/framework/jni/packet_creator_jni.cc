@@ -16,6 +16,7 @@
 
 #include <cstring>
 #include <memory>
+#include <utility>
 
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
@@ -27,6 +28,7 @@
 #include "mediapipe/framework/formats/matrix.h"
 #include "mediapipe/framework/formats/time_series_header.pb.h"
 #include "mediapipe/framework/formats/video_stream_header.h"
+#include "mediapipe/framework/packet.h"
 #include "mediapipe/framework/port/core_proto_inc.h"
 #include "mediapipe/framework/port/logging.h"
 #include "mediapipe/java/com/google/mediapipe/framework/jni/colorspace.h"
@@ -132,7 +134,8 @@ CreateImageFrameFromByteBuffer(JNIEnv* env, jobject byte_buffer, jint width,
   // code might expect to be able to overwrite the buffer after creating an
   // ImageFrame from it.
   image_frame->CopyPixelData(
-      format, width, height, width_step, static_cast<const uint8*>(buffer_data),
+      format, width, height, width_step,
+      static_cast<const uint8_t*>(buffer_data),
       mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
 
   return image_frame;
@@ -443,7 +446,7 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateFloat32Array)(
   // The reinterpret_cast is needed to make the Adopt template recognize
   // that this is an array - this way Holder will call delete[].
   mediapipe::Packet packet =
-      mediapipe::Adopt(reinterpret_cast<float(*)[]>(floats));
+      mediapipe::Adopt(reinterpret_cast<float (*)[]>(floats));
   return CreatePacketWithContext(context, packet);
 }
 
@@ -476,7 +479,16 @@ JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateInt32Array)(
   // The reinterpret_cast is needed to make the Adopt template recognize
   // that this is an array - this way Holder will call delete[].
   mediapipe::Packet packet =
-      mediapipe::Adopt(reinterpret_cast<int32_t(*)[]>(ints));
+      mediapipe::Adopt(reinterpret_cast<int32_t (*)[]>(ints));
+  return CreatePacketWithContext(context, packet);
+}
+
+JNIEXPORT jlong JNICALL PACKET_CREATOR_METHOD(nativeCreateInt32Pair)(
+    JNIEnv* env, jobject thiz, jlong context, jint first, jint second) {
+  static_assert(std::is_same<int32_t, jint>::value, "jint must be int32_t");
+
+  mediapipe::Packet packet = mediapipe::MakePacket<std::pair<int32_t, int32_t>>(
+      std::make_pair(first, second));
   return CreatePacketWithContext(context, packet);
 }
 

@@ -17,7 +17,7 @@
 
 #include "mediapipe/tasks/cc/components/containers/proto/classifications.pb.h"
 
-static const int kMicroSecondsPerMilliSecond = 1000;
+static const int kMicrosecondsPerMillisecond = 1000;
 
 namespace {
 using ClassificationResultProto =
@@ -25,7 +25,7 @@ using ClassificationResultProto =
 using ::mediapipe::Packet;
 }  // namespace
 
-#define int kMicroSecondsPerMilliSecond = 1000;
+#define int kMicrosecondsPerMillisecond = 1000;
 
 @implementation MPPTextClassifierResult (Helpers)
 
@@ -35,8 +35,8 @@ using ::mediapipe::Packet;
 
   return [[MPPTextClassifierResult alloc]
       initWithClassificationResult:classificationResult
-                       timestampMs:(NSInteger)(packet.Timestamp().Value() /
-                                               kMicroSecondsPerMilliSecond)];
+           timestampInMilliseconds:(NSInteger)(packet.Timestamp().Value() /
+                                               kMicrosecondsPerMillisecond)];
 }
 
 @end

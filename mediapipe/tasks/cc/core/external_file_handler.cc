@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ limitations under the License.
 #include <windows.h>
 #else
 #include <unistd.h>
-#endif
+#endif  // _WIN32
 
 #include <memory>
 #include <string>
@@ -43,10 +43,7 @@ limitations under the License.
 #include "mediapipe/framework/port/status_macros.h"
 #include "mediapipe/tasks/cc/common.h"
 #include "mediapipe/tasks/cc/core/proto/external_file.pb.h"
-
-#ifdef _WIN32
-#include "tools/cpp/runfiles/runfiles.h"
-#endif  // _WIN32
+#include "mediapipe/util/resource_util.h"
 
 namespace mediapipe {
 namespace tasks {
@@ -66,13 +63,13 @@ using ::absl::StatusCode;
 // Gets the offset aligned to page size for mapping given files into memory by
 // file descriptor correctly, as according to mmap(2), the offset used in mmap
 // must be a multiple of sysconf(_SC_PAGE_SIZE).
-int64 GetPageSizeAlignedOffset(int64 offset) {
+int64_t GetPageSizeAlignedOffset(int64_t offset) {
 #ifdef _WIN32
   // mmap is not used on Windows
   return 0;
 #else
-  int64 aligned_offset = offset;
-  int64 page_size = sysconf(_SC_PAGE_SIZE);
+  int64_t aligned_offset = offset;
+  int64_t page_size = sysconf(_SC_PAGE_SIZE);
   if (offset % page_size != 0) {
     aligned_offset = offset / page_size * page_size;
   }
@@ -94,24 +91,6 @@ ExternalFileHandler::CreateFromExternalFile(
   MP_RETURN_IF_ERROR(handler->MapExternalFile());
 
   return handler;
-}
-
-absl::StatusOr<std::string> PathToResourceAsFile(std::string path) {
-#ifndef _WIN32
-  return path;
-#else
-  if (absl::StartsWith(path, "./")) {
-    path = "mediapipe" + path.substr(1);
-  }
-
-  std::string error;
-  std::unique_ptr<::bazel::tools::cpp::runfiles::Runfiles> runfiles(
-      ::bazel::tools::cpp::runfiles::Runfiles::Create("", &error));
-  if (!runfiles) {
-    return absl::InternalError("Unable to initialize runfiles: " + error);
-  }
-  return runfiles->Rlocation(path);
-#endif  // _WIN32
 }
 
 absl::Status ExternalFileHandler::MapExternalFile() {
@@ -143,8 +122,8 @@ absl::Status ExternalFileHandler::MapExternalFile() {
   // Obtain file descriptor, offset and size.
   int fd = -1;
   if (!external_file_.file_name().empty()) {
-    ASSIGN_OR_RETURN(std::string file_name,
-                     PathToResourceAsFile(external_file_.file_name()));
+    MP_ASSIGN_OR_RETURN(std::string file_name,
+                        PathToResourceAsFile(external_file_.file_name()));
     owned_fd_ = open(file_name.c_str(), O_RDONLY | O_BINARY);
     if (owned_fd_ < 0) {
       const std::string error_message = absl::StrFormat(

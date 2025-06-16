@@ -114,7 +114,9 @@ TEST(CalculatorTest, SourceProcessOrder) {
   PacketSet input_side_packets(tool::CreateTagMap({}).value());
 
   CalculatorState calculator_state("Node", /*node_id=*/0, "Calculator",
-                                   CalculatorGraphConfig::Node(), nullptr);
+                                   CalculatorGraphConfig::Node(),
+                                   /*profiling_context=*/nullptr,
+                                   /*graph_service_manager=*/nullptr);
 
   calculator_state.SetInputSidePackets(&input_side_packets);
 
@@ -183,8 +185,7 @@ TEST(CalculatorTest, CreateByNameWhitelisted) {
   CalculatorBaseRegistry::Register(
       "::mediapipe::test_ns::whitelisted_ns::DeadCalculator",
       absl::make_unique<internal::CalculatorBaseFactoryFor<
-          mediapipe::test_ns::whitelisted_ns::DeadCalculator>>,
-      __FILE__, __LINE__);
+          mediapipe::test_ns::whitelisted_ns::DeadCalculator>>);
 
   // A whitelisted calculator can be found in its own namespace.
   MP_EXPECT_OK(CalculatorBaseRegistry::CreateByNameInNamespace(  //

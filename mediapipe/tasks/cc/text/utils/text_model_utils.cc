@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -99,11 +99,13 @@ absl::StatusOr<TextModelType::ModelType> GetModelType(
       *(*model_resources.GetTfLiteModel()->subgraphs())[0];
   bool all_int32_tensors =
       absl::c_all_of(*model_graph.inputs(), [&model_graph](int i) {
-        return (*model_graph.tensors())[i]->type() == tflite::TensorType_INT32;
+        return (*model_graph.tensors())[i] -> type() ==
+                                                  tflite::TensorType_INT32;
       });
   bool all_string_tensors =
       absl::c_all_of(*model_graph.inputs(), [&model_graph](int i) {
-        return (*model_graph.tensors())[i]->type() == tflite::TensorType_STRING;
+        return (*model_graph.tensors())[i] -> type() ==
+                                                  tflite::TensorType_STRING;
       });
   if (!all_int32_tensors && !all_string_tensors) {
     return CreateStatusWithPayload(

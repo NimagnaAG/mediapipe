@@ -1,4 +1,4 @@
-# Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2022 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,23 @@ from mediapipe.model_maker.python.core.utils import test_util
 
 
 class ModelUtilTest(tf.test.TestCase, parameterized.TestCase):
+
+  def test_get_default_callbacks(self):
+    callbacks = model_util.get_default_callbacks(
+        'export_dir', checkpoint_frequency=5
+    )
+    self.assertLen(callbacks, 2)
+    self.assertIsInstance(callbacks[0], tf.keras.callbacks.TensorBoard)
+    self.assertEqual(callbacks[0].log_dir, 'export_dir/summaries')
+    self.assertIsInstance(callbacks[1], tf.keras.callbacks.ModelCheckpoint)
+    self.assertEqual(callbacks[1].period, 5)
+
+    callbacks = model_util.get_default_callbacks(
+        'export_dir_2', checkpoint_frequency=0
+    )
+    self.assertLen(callbacks, 1)
+    self.assertIsInstance(callbacks[0], tf.keras.callbacks.TensorBoard)
+    self.assertEqual(callbacks[0].log_dir, 'export_dir_2/summaries')
 
   def test_load_keras_model(self):
     input_dim = 4

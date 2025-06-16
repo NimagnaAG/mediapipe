@@ -1,4 +1,4 @@
-# Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2022 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,4 +22,5 @@ objc_library(
         "sources/MPPCommon.h",
     ],
     module_name = "MPPCommon",
+    deps = ["//third_party/apple_frameworks:Foundation"],
 )

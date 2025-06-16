@@ -24,7 +24,7 @@ load(
 
 licenses(["notice"])
 
-MIN_IOS_VERSION = "11.0"
+MIN_IOS_VERSION = "12.0"
 
 alias(
     name = "handtrackinggpu",
@@ -59,7 +59,6 @@ objc_library(
     hdrs = [
         "HandTrackingViewController.h",
     ],
-    copts = ["-std=c++17"],
     data = [
         "//mediapipe/graphs/hand_tracking:hand_tracking_mobile_gpu.binarypb",
         "//mediapipe/modules/hand_landmark:hand_landmark_full.tflite",

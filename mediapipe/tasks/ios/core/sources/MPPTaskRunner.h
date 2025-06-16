@@ -14,8 +14,12 @@
 
 #import <Foundation/Foundation.h>
 
+#import "mediapipe/tasks/ios/core/sources/MPPTaskInfo.h"
+
 #include "mediapipe/framework/calculator.pb.h"
 #include "mediapipe/tasks/cc/core/task_runner.h"
+
+#include <optional>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -30,13 +34,18 @@ NS_ASSUME_NONNULL_BEGIN
  * additional functionality. For eg:, vision tasks must create an `MPPVisionTaskRunner` and provide
  * additional functionality. An instance of `MPPVisionTaskRunner` can in turn be used by the each
  * vision task for creation and execution of the task. Please see the documentation for the C++ Task
- * Runner for more details on how the taks runner operates.
+ * Runner for more details on how the tasks runner operates.
  */
 @interface MPPTaskRunner : NSObject
 
 /**
- * Initializes a new `MPPTaskRunner` with the MediaPipe calculator configuration proto and an
- * optional C++ packets callback.
+ * The canonicalized `CalculatorGraphConfig` of the underlying graph managed by the C++ task
+ * runner.
+ */
+@property(nonatomic, readonly) const mediapipe::CalculatorGraphConfig &graphConfig;
+
+/**
+ * Initializes a new `MPPTaskRunner` with the given task info and an optional C++ packets callback.
  *
  * You can pass `nullptr` for `packetsCallback` in case the mode of operation requested by the user
  * is synchronous.
@@ -48,38 +57,70 @@ NS_ASSUME_NONNULL_BEGIN
  * task. Please see the documentation of the C++ Task Runner for more information on the synchronous
  * and asynchronous modes of operation.
  *
- * @param graphConfig A mediapipe task graph config proto.
+ * @param taskInfo A `MPPTaskInfo` initialized by the task.
  * @param packetsCallback An optional C++ callback function that takes a list of output packets as
  * the input argument. If provided, the callback must in turn call the block provided by the user in
  * the appropriate task options.
  *
- * @return An instance of `MPPTaskRunner` initialized to the given graph config proto and optional
- * packetsCallback.
+ * @return An instance of `MPPTaskRunner` initialized with the given task info and the optional C++
+ * packets callback.
  */
-- (instancetype)initWithCalculatorGraphConfig:(mediapipe::CalculatorGraphConfig)graphConfig
-                              packetsCallback:
-                                  (mediapipe::tasks::core::PacketsCallback)packetsCallback
-                                        error:(NSError **)error NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithTaskInfo:(MPPTaskInfo *)taskInfo
+                 packetsCallback:(mediapipe::tasks::core::PacketsCallback)packetsCallback
+                           error:(NSError **)error NS_DESIGNATED_INITIALIZER;
 
 /**
- * A synchronous method for processing batch data or offline streaming data. This method is designed
- * for processing either batch data such as unrelated images and texts or offline streaming data
- * such as the decoded frames from a video file or audio file. The call blocks the current
- * thread until a failure status or a successful result is returned. If the input packets have no
- * timestamp, an internal timestamp will be assigend per invocation. Otherwise, when the timestamp
- * is set in the input packets, the caller must ensure that the input packet timestamps are greater
- * than the timestamps of the previous invocation. This method is thread-unsafe and it is the
- * caller's responsibility to synchronize access to this method across multiple threads and to
- * ensure that the input packet timestamps are in order.
+ * A synchronous method for invoking the C++ task runner for processing batch data or offline
+ * streaming data. This method is designed for processing either batch data such as unrelated images
+ * and texts or offline streaming data such as the decoded frames from a video file or audio file.
+ * The call blocks the current thread until a failure status or a successful result is returned. If
+ * the input packets have no timestamp, an internal timestamp will be assigned per invocation.
+ * Otherwise, when the timestamp is set in the input packets, the caller must ensure that the input
+ * packet timestamps are greater than the timestamps of the previous invocation. This method is
+ * thread-unsafe and it is the caller's responsibility to synchronize access to this method across
+ * multiple threads and to ensure that the input packet timestamps are in order.
+ *
+ * @param packetMap A `PacketMap` containing pairs of input stream name and data packet which are to
+ * be sent to the C++ task runner for processing synchronously.
+ * @param error Pointer to the memory location where errors if any should be saved. If @c NULL, no
+ * error will be saved.
+ *
+ * @return An optional output `PacketMap` containing pairs of output stream name and data packet
+ * which holds the results of processing the input packet map, if there are no errors.
  */
-- (absl::StatusOr<mediapipe::tasks::core::PacketMap>)process:
-    (const mediapipe::tasks::core::PacketMap &)packetMap;
+- (std::optional<mediapipe::tasks::core::PacketMap>)
+    processPacketMap:(const mediapipe::tasks::core::PacketMap &)packetMap
+               error:(NSError **)error;
+
+/**
+ * An asynchronous method that is designed for handling live streaming data such as live camera. A
+ * user-defined PacketsCallback function must be provided in the constructor to receive the output
+ * packets. The caller must ensure that the input packet timestamps are monotonically increasing.
+ * This method is thread-unsafe and it is the caller's responsibility to synchronize access to this
+ * method across multiple threads and to ensure that the input packet timestamps are in order.
+ *
+ * @param packetMap A `PacketMap` containing pairs of input stream name and data packet that are to
+ * be sent to the C++ task runner for processing asynchronously.
+ * @param error Pointer to the memory location where errors if any should be saved. If @c NULL, no
+ * error will be saved.
+ *
+ * @return A `BOOL` indicating if the live stream data was sent to the C++ task runner successfully.
+ * Please note that any errors during processing of the live stream packet map will only be
+ * available in the user-defined `packetsCallback` that was provided during initialization of the
+ * `MPPVisionTaskRunner`.
+ */
+- (BOOL)sendPacketMap:(const mediapipe::tasks::core::PacketMap &)packetMap error:(NSError **)error;
 
 /**
  * Shuts down the C++ task runner. After the runner is closed, any calls that send input data to the
  * runner are illegal and will receive errors.
+ *
+ * @param error Pointer to the memory location where errors if any should be saved. If @c NULL, no
+ * error will be saved.
+ *
+ * @return A `BOOL` indicating if the C++ task runner was shutdown successfully.
  */
-- (absl::Status)close;
+- (BOOL)closeWithError:(NSError **)error;
 
 - (instancetype)init NS_UNAVAILABLE;
 

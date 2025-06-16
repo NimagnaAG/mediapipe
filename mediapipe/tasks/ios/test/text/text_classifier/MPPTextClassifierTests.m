@@ -28,9 +28,7 @@ static NSString *const kExpectedErrorDomain = @"com.google.mediapipe.tasks";
   XCTAssertNotNil(error);                                                                     \
   XCTAssertEqualObjects(error.domain, expectedError.domain);                                  \
   XCTAssertEqual(error.code, expectedError.code);                                             \
-  XCTAssertNotEqual(                                                                          \
-      [error.localizedDescription rangeOfString:expectedError.localizedDescription].location, \
-      NSNotFound)
+  XCTAssertEqualObjects(error.localizedDescription, expectedError.localizedDescription)
 
 #define AssertEqualCategoryArrays(categories, expectedCategories)                         \
   XCTAssertEqual(categories.count, expectedCategories.count);                             \
@@ -57,8 +55,8 @@ static NSString *const kExpectedErrorDomain = @"com.google.mediapipe.tasks";
 
 + (NSArray<MPPCategory *> *)expectedBertResultCategoriesForNegativeText {
   return @[
-    [[MPPCategory alloc] initWithIndex:0 score:0.956187f categoryName:@"negative" displayName:nil],
-    [[MPPCategory alloc] initWithIndex:1 score:0.043812f categoryName:@"positive" displayName:nil]
+    [[MPPCategory alloc] initWithIndex:0 score:0.963325f categoryName:@"negative" displayName:nil],
+    [[MPPCategory alloc] initWithIndex:1 score:0.036675f categoryName:@"positive" displayName:nil]
   ];
 }
 
@@ -85,7 +83,7 @@ static NSString *const kExpectedErrorDomain = @"com.google.mediapipe.tasks";
 
 + (NSArray<MPPCategory *> *)expectedBertResultCategoriesForEdgeCaseTests {
   return @[ [[MPPCategory alloc] initWithIndex:0
-                                         score:0.956187f
+                                         score:0.963325f
                                   categoryName:@"negative"
                                    displayName:nil] ];
 }

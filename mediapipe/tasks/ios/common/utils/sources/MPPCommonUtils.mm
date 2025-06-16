@@ -1,4 +1,4 @@
-// Copyright 2022 The TensorFlow Authors. All Rights Reserved.
+// Copyright 2022 The TensorFlow Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -59,12 +59,12 @@ using absl::StatusCode;
     return NULL;
   }
 
-  void *allocedMemory = malloc(memSize);
-  if (!allocedMemory) {
+  void *allocatedMemory = malloc(memSize);
+  if (!allocatedMemory) {
     exit(-1);
   }
 
-  return allocedMemory;
+  return allocatedMemory;
 }
 
 + (BOOL)checkCppError:(const absl::Status &)status toError:(NSError *_Nullable *)error {

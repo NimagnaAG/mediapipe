@@ -23,8 +23,6 @@
 #import "mediapipe/tasks/ios/text/text_embedder/utils/sources/MPPTextEmbedderOptions+Helpers.h"
 #import "mediapipe/tasks/ios/text/text_embedder/utils/sources/MPPTextEmbedderResult+Helpers.h"
 
-#include "absl/status/statusor.h"
-
 namespace {
 using ::mediapipe::Packet;
 using ::mediapipe::tasks::core::PacketMap;
@@ -60,9 +58,7 @@ static NSString *const kTaskGraphName = @"mediapipe.tasks.text.text_embedder.Tex
       return nil;
     }
 
-    _textTaskRunner =
-        [[MPPTextTaskRunner alloc] initWithCalculatorGraphConfig:[taskInfo generateGraphConfig]
-                                                           error:error];
+    _textTaskRunner = [[MPPTextTaskRunner alloc] initWithTaskInfo:taskInfo error:error];
 
     if (!_textTaskRunner) {
       return nil;
@@ -83,14 +79,15 @@ static NSString *const kTaskGraphName = @"mediapipe.tasks.text.text_embedder.Tex
   Packet packet = [MPPTextPacketCreator createWithText:text];
 
   std::map<std::string, Packet> packetMap = {{kTextInStreamName.cppString, packet}};
-  absl::StatusOr<PacketMap> statusOrOutputPacketMap = [_textTaskRunner process:packetMap];
 
-  if (![MPPCommonUtils checkCppError:statusOrOutputPacketMap.status() toError:error]) {
+  std::optional<PacketMap> outputPacketMap = [_textTaskRunner processPacketMap:packetMap
+                                                                         error:error];
+
+  if (!outputPacketMap.has_value()) {
     return nil;
   }
-
   return [MPPTextEmbedderResult
-      textEmbedderResultWithOutputPacket:statusOrOutputPacketMap
+      textEmbedderResultWithOutputPacket:outputPacketMap
                                              .value()[kEmbeddingsOutStreamName.cppString]];
 }
 

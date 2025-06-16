@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ limitations under the License.
 #include "mediapipe/framework/timestamp.h"
 #include "mediapipe/tasks/cc/components/calculators/classification_aggregation_calculator.pb.h"
 #include "mediapipe/tasks/cc/components/containers/proto/classifications.pb.h"
-#include "tensorflow/lite/core/shims/cc/shims_test_util.h"
+#include "tensorflow/lite/test_util.h"
 
 namespace mediapipe {
 namespace {
@@ -66,8 +66,7 @@ ClassificationList MakeClassificationList(int class_index) {
       class_index));
 }
 
-class ClassificationAggregationCalculatorTest
-    : public tflite_shims::testing::Test {
+class ClassificationAggregationCalculatorTest : public tflite::testing::Test {
  protected:
   absl::StatusOr<OutputStreamPoller> BuildGraph(
       bool connect_timestamps = false) {
@@ -99,13 +98,13 @@ class ClassificationAggregationCalculatorTest
 
     MP_RETURN_IF_ERROR(calculator_graph_.Initialize(graph.GetConfig()));
     if (connect_timestamps) {
-      ASSIGN_OR_RETURN(auto poller, calculator_graph_.AddOutputStreamPoller(
-                                        kTimestampedClassificationsName));
+      MP_ASSIGN_OR_RETURN(auto poller, calculator_graph_.AddOutputStreamPoller(
+                                           kTimestampedClassificationsName));
       MP_RETURN_IF_ERROR(calculator_graph_.StartRun(/*extra_side_packets=*/{}));
       return poller;
     }
-    ASSIGN_OR_RETURN(auto poller, calculator_graph_.AddOutputStreamPoller(
-                                      kClassificationsName));
+    MP_ASSIGN_OR_RETURN(auto poller, calculator_graph_.AddOutputStreamPoller(
+                                         kClassificationsName));
     MP_RETURN_IF_ERROR(calculator_graph_.StartRun(/*extra_side_packets=*/{}));
     return poller;
   }

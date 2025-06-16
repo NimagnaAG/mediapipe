@@ -1,4 +1,4 @@
-# Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2022 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -94,4 +94,6 @@ class DownloadedFiles:
         pathlib.Path.mkdir(absolute_path.parent, parents=True, exist_ok=True)
         with open(absolute_path, 'wb') as f:
           f.write(r.content)
+    else:
+      print(f'Using existing files at {absolute_path}')
     return str(absolute_path)

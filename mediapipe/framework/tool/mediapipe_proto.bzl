@@ -1,10 +1,15 @@
 """Provides BUILD macros for MediaPipe proto-buffers.
 """
 
+# buildifier: disable=out-of-order-load
 load("//mediapipe/framework/tool:mediapipe_graph.bzl", "mediapipe_options_library")
+load("//mediapipe/framework/tool:mediapipe_proto_allowlist.bzl", "rewrite_target_list")
 load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library", "py_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("@rules_proto_grpc//js:defs.bzl", "js_proto_library")
+
+java_proto_library = native.java_proto_library
+java_lite_proto_library = native.java_lite_proto_library
 
 def provided_args(**kwargs):
     """Returns the keyword arguments omitting None arguments."""
@@ -32,6 +37,7 @@ def replace_deps(deps, old, new, drop_google_protobuf = True):
         deps = [dep for dep in deps if not dep.startswith("@com_google_protobuf//")]
     deps = [replace_suffix(dep, "any_proto", "cc_wkt_protos") for dep in deps]
 
+    deps = [dep for dep in deps if not dep.endswith("_annotations")]
     deps = [replace_suffix(dep, old, new) for dep in deps]
     return deps
 
@@ -48,10 +54,12 @@ def mediapipe_proto_library_impl(
         def_cc_proto = True,
         def_py_proto = True,
         def_java_lite_proto = True,
+        def_kt_lite_proto = True,
         def_objc_proto = True,
         def_java_proto = True,
         def_jspb_proto = True,
         def_go_proto = True,
+        def_dart_proto = True,
         def_options_lib = True):
     """Defines the proto_library targets needed for all mediapipe platforms.
 
@@ -69,10 +77,12 @@ def mediapipe_proto_library_impl(
       def_cc_proto: define the cc_proto_library target
       def_py_proto: define the py_proto_library target
       def_java_lite_proto: define the java_lite_proto_library target
+      def_kt_lite_proto: define the kt_lite_proto_library target
       def_objc_proto: define the objc_proto_library target
       def_java_proto: define the java_proto_library target
       def_jspb_proto: define the jspb_proto_library target
       def_go_proto: define the go_proto_library target
+      def_dart_proto: define the dart_proto_library target
       def_options_lib: define the mediapipe_options_library target
     """
 
@@ -80,7 +90,7 @@ def mediapipe_proto_library_impl(
     proto_deps = [":" + name]
 
     if def_proto:
-        native.proto_library(**provided_args(
+        _proto_library(**provided_args(
             name = name,
             srcs = srcs,
             deps = deps,
@@ -88,7 +98,6 @@ def mediapipe_proto_library_impl(
             visibility = visibility,
             testonly = testonly,
             compatible_with = compatible_with,
-            alwayslink = alwayslink,
         ))
 
     if def_cc_proto:
@@ -117,7 +126,7 @@ def mediapipe_proto_library_impl(
         ))
 
     if def_java_lite_proto:
-        native.java_lite_proto_library(**provided_args(
+        java_lite_proto_library(**provided_args(
             name = replace_suffix(name, "_proto", "_java_proto_lite"),
             deps = proto_deps,
             visibility = visibility,
@@ -126,7 +135,7 @@ def mediapipe_proto_library_impl(
         ))
 
     if def_java_proto:
-        native.java_proto_library(**provided_args(
+        java_proto_library(**provided_args(
             name = replace_suffix(name, "_proto", "_java_proto"),
             deps = proto_deps,
             visibility = visibility,
@@ -156,6 +165,26 @@ def mediapipe_proto_library_impl(
             compatible_with = compatible_with,
         ))
 
+def SourceName(proto_target):
+    "Returns the proto source file name for a target without extension."
+    words = proto_target.split("_")[:-1]
+    return "_".join(words)
+
+def MessageName(proto_target):
+    "Returns the proto message name for a target."
+    words = proto_target.split("_")[:-1]
+    words_upper = [w.capitalize() for w in words]
+    return "".join(words_upper)
+
+def SubsituteCommand(old, new):
+    "Returns the shell command to replace a regex."
+    old = old.replace("/", "[/]")
+    new = new.replace('"', '\\"')
+    return "awk '{print gensub(/" + old + '/, "' + new + '", "g");}' + "'"
+
+rewrite_source_regex = "|".join([SourceName(t) for t in rewrite_target_list])
+rewrite_message_regex = "|".join([MessageName(t) for t in rewrite_target_list])
+
 # After rewrite, all intra-package references refer to "mediapipe",
 # and all imports refer to rewritten proto source files.
 def rewrite_mediapipe_proto(name, rewrite_proto, source_proto, **kwargs):
@@ -167,28 +196,41 @@ def rewrite_mediapipe_proto(name, rewrite_proto, source_proto, **kwargs):
       source_proto: the old ".proto" source file name.
       **kwargs: the remaining arguments.
     """
-    split_path = r'"\(.*\)/\([^/]*\).proto"'
-    rewrite_package = r"s|package mediapipe;|package mediapipe;|"
-    rewrite_import = r"s|import " + split_path + r'|import "\1/protobuf/\2.proto"|'
-    rewrite_import_public = r"s|import public " + split_path + r'|import public "\1/protobuf/\2.proto"|'
-    rewrite_import_any = r's|import "\(.*\)/protobuf/any.proto"|import "\1/any.proto"|'
-    rewrite_import_status = r's|import "\(.*\)/protobuf/status.proto"|import "\1/status.proto"|'
-    rewrite_ref = r"s|mediapipe\.|mediapipe\.|"
-    rewrite_objc = r's|objc_class_prefix = "MediaPipe"|objc_class_prefix = "MPP"|'
 
+    split_path = r"(.*)/(" + rewrite_source_regex + ").proto"
+    join_path = r"\\1/protobuf/\\2.proto"
+    rewrite_package = SubsituteCommand(
+        "package mediapipe;",
+        "package mediapipe;",
+    )
+    rewrite_import = SubsituteCommand(
+        'import "' + split_path + '";',
+        'import "' + join_path + '";',
+    )
+    rewrite_import_public = SubsituteCommand(
+        'import public "' + split_path + '";',
+        'import public "' + join_path + '";',
+    )
+    rewrite_ref = SubsituteCommand(
+        r"mediapipe\.(" + rewrite_message_regex + ")",
+        r"mediapipe.\\1",
+    )
+    rewrite_objc = SubsituteCommand(
+        r'objc_class_prefix = "MediaPipe"',
+        r'objc_class_prefix = "MPP"',
+    )
     native.genrule(
         name = name,
         outs = [rewrite_proto],
         srcs = [source_proto],
         cmd = "for OUT in $(OUTS); do \n" +
-              "  cp $(location " + source_proto + ") $$OUT \n" +
-              "  sed -i -e '" + rewrite_package + "' $$OUT \n" +
-              "  sed -i -e '" + rewrite_import + "' $$OUT \n" +
-              "  sed -i -e '" + rewrite_import_public + "' $$OUT \n" +
-              "  sed -i -e '" + rewrite_import_any + "' $$OUT \n" +
-              "  sed -i -e '" + rewrite_import_status + "' $$OUT \n" +
-              "  sed -i -e '" + rewrite_ref + "' $$OUT \n" +
-              "  sed -i -e '" + rewrite_objc + "' $$OUT \n" +
+              "  cat $(location " + source_proto + ") " +
+              "  | " + rewrite_package +
+              "  | " + rewrite_import +
+              "  | " + rewrite_import_public +
+              "  | " + rewrite_ref +
+              "  | " + rewrite_objc +
+              "  > $$OUT \n" +
               "done",
         **kwargs
     )
@@ -219,13 +261,15 @@ def mediapipe_proto_library(
         def_cc_proto = True,
         def_py_proto = True,
         def_java_lite_proto = True,
+        def_kt_lite_proto = True,
         def_portable_proto = True,  # @unused
         def_objc_proto = True,
         def_java_proto = True,
         def_jspb_proto = True,
         def_go_proto = True,
+        def_dart_proto = True,
         def_options_lib = True,
-        def_rewrite = True,
+        def_rewrite = False,
         portable_deps = None):  # @unused
     """Defines the proto_library targets needed for all mediapipe platforms.
 
@@ -244,13 +288,15 @@ def mediapipe_proto_library(
       def_cc_proto: define the cc_proto_library target
       def_py_proto: define the py_proto_library target
       def_java_lite_proto: define the java_lite_proto_library target
+      def_kt_lite_proto: define the kt_lite_proto_library target
       def_portable_proto: ignored since portable protos are gone
       def_objc_proto: define the objc_proto_library target
       def_java_proto: define the java_proto_library target
       def_jspb_proto: define the jspb_proto_library target
       def_go_proto: define the go_proto_library target
+      def_dart_proto: define the dart_proto_library target
       def_options_lib: define the mediapipe_options_library target
-      def_rewrite: define a sibbling mediapipe_proto_library with package "mediapipe"
+      def_rewrite: define a sibling mediapipe_proto_library with package "mediapipe"
     """
 
     mediapipe_proto_library_impl(
@@ -266,10 +312,12 @@ def mediapipe_proto_library(
         def_cc_proto = def_cc_proto,
         def_py_proto = def_py_proto,
         def_java_lite_proto = def_java_lite_proto,
+        def_kt_lite_proto = def_kt_lite_proto,
         def_objc_proto = def_objc_proto,
         def_java_proto = def_java_proto,
         def_jspb_proto = def_jspb_proto,
         def_go_proto = def_go_proto,
+        def_dart_proto = def_dart_proto,
         def_options_lib = def_options_lib,
     )
 
@@ -295,10 +343,12 @@ def mediapipe_proto_library(
             def_cc_proto = def_cc_proto,
             def_py_proto = def_py_proto,
             def_java_lite_proto = def_java_lite_proto,
+            def_kt_lite_proto = def_kt_lite_proto,
             def_objc_proto = def_objc_proto,
             def_java_proto = def_java_proto,
             def_jspb_proto = def_jspb_proto,
             def_go_proto = def_go_proto,
+            def_dart_proto = def_dart_proto,
             # A clone of mediapipe_options_library() will redefine some classes.
             def_options_lib = False,
         )
@@ -385,7 +435,7 @@ def mediapipe_js_proto_library_oss(
     _ignore = [deps, testonly, compatible_with]
 
     js_deps = replace_deps(lib_proto_deps, "_proto", "_jspb_proto", False)
-    proto_library(
+    _proto_library(
         name = replace_suffix(name, "_jspb_proto", "_lib_proto"),
         srcs = srcs,
         deps = lib_proto_deps,

@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ limitations under the License.
 #include "mediapipe/tasks/cc/components/processors/proto/text_model_type.pb.h"
 #include "mediapipe/tasks/cc/core/model_resources.h"
 #include "mediapipe/tasks/cc/core/proto/external_file.pb.h"
-#include "tensorflow/lite/core/shims/cc/shims_test_util.h"
+#include "tensorflow/lite/test_util.h"
 
 namespace mediapipe::tasks::text::utils {
 
@@ -68,15 +68,16 @@ absl::StatusOr<TextModelType::ModelType> GetModelTypeFromFile(
     absl::string_view file_name) {
   auto model_file = std::make_unique<ExternalFile>();
   model_file->set_file_name(GetFullPath(file_name));
-  ASSIGN_OR_RETURN(auto model_resources,
-                   ModelResources::Create(std::string(kTestModelResourcesTag),
-                                          std::move(model_file)));
+  MP_ASSIGN_OR_RETURN(
+      auto model_resources,
+      ModelResources::Create(std::string(kTestModelResourcesTag),
+                             std::move(model_file)));
   return GetModelType(*model_resources);
 }
 
 }  // namespace
 
-class TextModelUtilsTest : public tflite_shims::testing::Test {};
+class TextModelUtilsTest : public tflite::testing::Test {};
 
 TEST_F(TextModelUtilsTest, BertClassifierModelTest) {
   MP_ASSERT_OK_AND_ASSIGN(auto model_type,

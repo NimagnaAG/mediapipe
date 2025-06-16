@@ -24,7 +24,7 @@ load(
 
 licenses(["notice"])
 
-MIN_IOS_VERSION = "11.0"
+MIN_IOS_VERSION = "12.0"
 
 alias(
     name = "iristrackinggpu",
@@ -59,7 +59,6 @@ objc_library(
     hdrs = [
         "IrisTrackingViewController.h",
     ],
-    copts = ["-std=c++17"],
     data = [
         "//mediapipe/graphs/iris_tracking:iris_tracking_gpu.binarypb",
         "//mediapipe/modules/face_detection:face_detection_short_range.tflite",

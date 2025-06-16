@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef MEDIAPIPE_TASKS_CC_AUDIO_AUDIO_EMBEDDER_AUDIO_EMBEDDER_H_
 #define MEDIAPIPE_TASKS_CC_AUDIO_AUDIO_EMBEDDER_AUDIO_EMBEDDER_H_
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -121,20 +122,10 @@ class AudioEmbedder : core::BaseAudioTaskApi {
   // into multiple chunks. For this reason, the callback may be called multiple
   // times (once per chunk) for each call to this function.
   absl::Status EmbedAsync(Matrix audio_block, double audio_sample_rate,
-                          int64 timestamp_ms);
+                          int64_t timestamp_ms);
 
   // Shuts down the AudioEmbedder when all works are done.
   absl::Status Close() { return runner_->Close(); }
-
-  // Utility function to compute cosine similarity [1] between two embeddings.
-  // May return an InvalidArgumentError if e.g. the embeddings are of different
-  // types (quantized vs. float), have different sizes, or have a an L2-norm of
-  // 0.
-  //
-  // [1]: https://en.wikipedia.org/wiki/Cosine_similarity
-  static absl::StatusOr<double> CosineSimilarity(
-      const components::containers::Embedding& u,
-      const components::containers::Embedding& v);
 };
 
 }  // namespace mediapipe::tasks::audio::audio_embedder

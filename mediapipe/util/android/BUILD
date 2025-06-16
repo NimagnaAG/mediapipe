@@ -23,18 +23,25 @@ cc_library(
         ],
     }),
     hdrs = ["asset_manager_util.h"],
+    defines = select({
+        "//mediapipe/framework:android_no_jni": ["MEDIAPIPE_NO_JNI"],
+        "//conditions:default": [],
+    }),
     linkopts = select({
         "//conditions:default": [],
+        "//mediapipe/framework:android_no_jni": [],
         "//mediapipe:android": ["-landroid"],
     }),
     visibility = ["//visibility:public"],
     deps = [
-        "@com_google_absl//absl/strings",
         "//mediapipe/framework/port:ret_check",
         "//mediapipe/framework/port:singleton",
         "//mediapipe/framework/port:status",
         "//mediapipe/framework/port:statusor",
         "//mediapipe/util/android/file/base",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
     ] + select({
         "//conditions:default": [],
         "//mediapipe:android": [

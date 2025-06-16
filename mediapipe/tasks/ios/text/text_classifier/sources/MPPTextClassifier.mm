@@ -22,7 +22,6 @@
 #import "mediapipe/tasks/ios/text/text_classifier/utils/sources/MPPTextClassifierOptions+Helpers.h"
 #import "mediapipe/tasks/ios/text/text_classifier/utils/sources/MPPTextClassifierResult+Helpers.h"
 
-#include "absl/status/statusor.h"
 #include "mediapipe/tasks/cc/components/containers/proto/classifications.pb.h"
 
 namespace {
@@ -60,9 +59,7 @@ static NSString *const kTaskGraphName = @"mediapipe.tasks.text.text_classifier.T
       return nil;
     }
 
-    _textTaskRunner =
-        [[MPPTextTaskRunner alloc] initWithCalculatorGraphConfig:[taskInfo generateGraphConfig]
-                                                           error:error];
+    _textTaskRunner = [[MPPTextTaskRunner alloc] initWithTaskInfo:taskInfo error:error];
 
     if (!_textTaskRunner) {
       return nil;
@@ -83,15 +80,16 @@ static NSString *const kTaskGraphName = @"mediapipe.tasks.text.text_classifier.T
   Packet packet = [MPPTextPacketCreator createWithText:text];
 
   std::map<std::string, Packet> packetMap = {{kTextInStreamName.cppString, packet}};
-  absl::StatusOr<PacketMap> statusOrOutputPacketMap = [_textTaskRunner process:packetMap];
+  std::optional<PacketMap> outputPacketMap = [_textTaskRunner processPacketMap:packetMap
+                                                                         error:error];
 
-  if (![MPPCommonUtils checkCppError:statusOrOutputPacketMap.status() toError:error]) {
+  if (!outputPacketMap.has_value()) {
     return nil;
   }
 
-  return [MPPTextClassifierResult
-      textClassifierResultWithClassificationsPacket:statusOrOutputPacketMap.value()
-                                                        [kClassificationsStreamName.cppString]];
+  return
+      [MPPTextClassifierResult textClassifierResultWithClassificationsPacket:
+                                   outputPacketMap.value()[kClassificationsStreamName.cppString]];
 }
 
 @end

@@ -17,14 +17,14 @@
 
 #include "mediapipe/tasks/cc/components/containers/proto/embeddings.pb.h"
 
-static const int kMicroSecondsPerMilliSecond = 1000;
+static const int kMicrosecondsPerMillisecond = 1000;
 
 namespace {
 using EmbeddingResultProto = ::mediapipe::tasks::components::containers::proto::EmbeddingResult;
 using ::mediapipe::Packet;
 }  // namespace
 
-#define int kMicroSecondsPerMilliSecond = 1000;
+#define int kMicrosecondsPerMillisecond = 1000;
 
 @implementation MPPTextEmbedderResult (Helpers)
 
@@ -34,8 +34,8 @@ using ::mediapipe::Packet;
 
   return [[MPPTextEmbedderResult alloc]
       initWithEmbeddingResult:embeddingResult
-                  timestampMs:(NSInteger)(packet.Timestamp().Value() /
-                                          kMicroSecondsPerMilliSecond)];
+      timestampInMilliseconds:(NSInteger)(packet.Timestamp().Value() /
+                                          kMicrosecondsPerMillisecond)];
 }
 
 @end

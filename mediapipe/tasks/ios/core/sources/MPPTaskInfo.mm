@@ -68,12 +68,33 @@ using ::mediapipe::InputStreamInfo;
   return taskInfo;
 }
 
-- (CalculatorGraphConfig)generateGraphConfig {
+- (std::optional<CalculatorGraphConfig>)generateGraphConfigWithError:
+    (NSError **)error {
+  if ([self.taskOptions respondsToSelector:@selector(copyToProto:)] &&
+      [self.taskOptions respondsToSelector:@selector(copyToAnyProto:)]) {
+    [MPPCommonUtils createCustomError:error
+                             withCode:MPPTasksErrorCodeInternalError
+                          description:@"Only one of copyTo*Proto: methods should be implemented by "
+                                      @"the subclass of `MPPTaskOptions`."];
+    return std::nullopt;
+  }
+
   CalculatorGraphConfig graphConfig;
 
   Node *taskSubgraphNode = graphConfig.add_node();
   taskSubgraphNode->set_calculator(self.taskGraphName.cppString);
-  [self.taskOptions copyToProto:taskSubgraphNode->mutable_options()];
+
+  if ([self.taskOptions respondsToSelector:@selector(copyToProto:)]) {
+    [self.taskOptions copyToProto:taskSubgraphNode->mutable_options()];
+  } else if ([self.taskOptions respondsToSelector:@selector(copyToAnyProto:)]) {
+    [self.taskOptions copyToAnyProto:taskSubgraphNode->mutable_node_options()->Add()];
+  } else {
+    [MPPCommonUtils createCustomError:error
+                             withCode:MPPTasksErrorCodeInternalError
+                          description:@"One of copyTo*Proto: methods must be implemented by the "
+                                      @"subclass of `MPPTaskOptions`."];
+    return std::nullopt;
+  }
 
   for (NSString *outputStream in self.outputStreams) {
     auto cppOutputStream = std::string(outputStream.cppString);
@@ -107,18 +128,18 @@ using ::mediapipe::InputStreamInfo;
   for (NSString *inputStream in self.inputStreams) {
     graphConfig.add_input_stream(inputStream.cppString);
 
-    NSString *strippedInputStream = [MPPTaskInfo stripTagIndex:inputStream];
-    flowLimitCalculatorNode->add_input_stream(strippedInputStream.cppString);
-
     NSString *taskInputStream = [MPPTaskInfo addStreamNamePrefix:inputStream];
     taskSubgraphNode->add_input_stream(taskInputStream.cppString);
+
+    NSString *strippedInputStream = [MPPTaskInfo stripTagIndex:inputStream];
+    flowLimitCalculatorNode->add_input_stream(strippedInputStream.cppString);
 
     NSString *strippedTaskInputStream = [MPPTaskInfo stripTagIndex:taskInputStream];
     flowLimitCalculatorNode->add_output_stream(strippedTaskInputStream.cppString);
   }
 
-  NSString *firstOutputStream = self.outputStreams[0];
-  auto finishedOutputStream = "FINISHED:" + firstOutputStream.cppString;
+  NSString *strippedFirstOutputStream = [MPPTaskInfo stripTagIndex:self.outputStreams[0]];
+  auto finishedOutputStream = "FINISHED:" + strippedFirstOutputStream.cppString;
   flowLimitCalculatorNode->add_input_stream(finishedOutputStream);
 
   return graphConfig;

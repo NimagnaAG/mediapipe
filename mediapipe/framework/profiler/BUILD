@@ -34,16 +34,6 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
-config_setting(
-    name = "android_release",
-    values = {
-        "crosstool_top": "//tools/android:ndk",
-        "compilation_mode": "opt",
-        "define": "prod=1",
-    },
-    visibility = ["//visibility:public"],
-)
-
 # Maps either to graph_profiler_real or to graph_profiler_stub
 # depending on the platform, compilation mode, and MEDIAPIPE_PROFILING value.
 # This requires three levels of aliases because of limitations with select.
@@ -56,6 +46,10 @@ alias(
     actual = select({
         "//conditions:default": ":graph_profiler_default_on",
     }),
+    visibility = [
+        "//mediapipe/framework:__subpackages__",
+        "//mediapipe/java:__subpackages__",
+    ],
 )
 
 alias(
@@ -102,32 +96,33 @@ cc_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        ":profiler_resource_util",
         ":graph_tracer",
-        ":trace_buffer",
+        ":profiler_resource_util",
         ":sharded_map",
+        ":trace_buffer",
+        ":web_performance_profiling",
         "//mediapipe/framework:calculator_cc_proto",
-        "//mediapipe/framework:calculator_profile_cc_proto",
-        "//mediapipe/framework/port:file_helpers",
-        "//mediapipe/framework/port:integral_types",
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/types:optional",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/synchronization",
-        "@com_google_absl//absl/time",
-        "//mediapipe/framework/deps:clock",
         "//mediapipe/framework:calculator_context",
+        "//mediapipe/framework:calculator_profile_cc_proto",
         "//mediapipe/framework:executor",
         "//mediapipe/framework:validated_graph_config",
-        "//mediapipe/framework/tool:tag_map",
-        "//mediapipe/framework/tool:validate_name",
-        "//mediapipe/framework/port:logging",
+        "//mediapipe/framework/deps:clock",
+        "//mediapipe/framework/port:advanced_proto_lite",
+        "//mediapipe/framework/port:file_helpers",
+        "//mediapipe/framework/port:integral_types",
         "//mediapipe/framework/port:re2",
         "//mediapipe/framework/port:ret_check",
         "//mediapipe/framework/port:status",
-        "//mediapipe/framework/port:advanced_proto_lite",
         "//mediapipe/framework/tool:name_util",
-        ":web_performance_profiling",
+        "//mediapipe/framework/tool:tag_map",
+        "//mediapipe/framework/tool:validate_name",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
     ] + select({
         "//conditions:default": [],
     }) + select({
@@ -212,17 +207,18 @@ cc_library(
 
 cc_library(
     name = "test_context_builder",
-    testonly = 1,
+    testonly = True,
     hdrs = ["test_context_builder.h"],
     deps = [
         "//mediapipe/framework:calculator_framework",
         "//mediapipe/framework:calculator_options_cc_proto",
+        "//mediapipe/framework:calculator_state",
         "//mediapipe/framework:mediapipe_options_cc_proto",
-        "//mediapipe/framework/port:logging",
         "//mediapipe/framework/port:status",
         "//mediapipe/framework/port:statusor",
         "//mediapipe/framework/tool:tag_map",
         "//mediapipe/framework/tool:tag_map_helper",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/memory",
     ],
 )
@@ -257,6 +253,7 @@ cc_test(
         "//mediapipe/framework/tool:simulation_clock_executor",
         "//mediapipe/framework/tool:status_util",
         "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/time",
     ],
 )
@@ -268,9 +265,9 @@ cc_test(
         ":sharded_map",
         "//mediapipe/framework/port:gtest_main",
         "//mediapipe/framework/port:integral_types",
-        "//mediapipe/framework/port:logging",
         "//mediapipe/framework/port:threadpool",
         "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
     ],
@@ -314,12 +311,12 @@ cc_library(
     }),
     visibility = ["//visibility:private"],
     deps = [
-        "@com_google_absl//absl/flags:flag",
+        "//mediapipe/framework/deps:file_path",
         "//mediapipe/framework/port:logging",
         "//mediapipe/framework/port:ret_check",
-        "//mediapipe/framework/port:statusor",
         "//mediapipe/framework/port:status",
-        "//mediapipe/framework/deps:file_path",
+        "//mediapipe/framework/port:statusor",
+        "@com_google_absl//absl/flags:flag",
     ] + select({
         "//conditions:default": [
             "//mediapipe/framework/port:file_helpers",
@@ -328,8 +325,8 @@ cc_library(
             "//mediapipe/framework/port:file_helpers",
         ],
         "//mediapipe:android": [
-            "//mediapipe/java/com/google/mediapipe/framework/jni:jni_util",
             "//mediapipe/framework/port:file_helpers",
+            "//mediapipe/java/com/google/mediapipe/framework/jni:jni_util",
         ],
         "//mediapipe:apple": [
             "//mediapipe/framework/port:file_helpers",
@@ -374,6 +371,7 @@ cc_test(
         "//mediapipe/framework/port:parse_text_proto",
         "//mediapipe/framework/profiler/reporter:reporter_lib",
         "//mediapipe/framework/tool:test_util",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],

@@ -1,4 +1,4 @@
-# Copyright 2023 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2023 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ objc_library(
     srcs = ["sources/MPPBaseOptions+Helpers.mm"],
     hdrs = ["sources/MPPBaseOptions+Helpers.h"],
     deps = [
+        "//mediapipe/calculators/tensor:inference_calculator_cc_proto",
         "//mediapipe/tasks/cc/core/proto:acceleration_cc_proto",
         "//mediapipe/tasks/cc/core/proto:base_options_cc_proto",
         "//mediapipe/tasks/cc/core/proto:external_file_cc_proto",

@@ -1,4 +1,4 @@
-# Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2022 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,17 +17,24 @@
 
 licenses(["notice"])
 
-package(
-    default_visibility = ["//mediapipe:__subpackages__"],
+package(default_visibility = ["//mediapipe:__subpackages__"])
+
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "testdata/**",
+    ]),
 )
 
 py_library(
     name = "test_util",
-    testonly = 1,
+    testonly = True,
     srcs = ["test_util.py"],
     deps = [
         ":model_util",
         "//mediapipe/model_maker/python/core/data:dataset",
+        "@model_maker_pip_deps_numpy//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
     ],
 )
 
@@ -37,6 +44,8 @@ py_library(
     deps = [
         ":quantization",
         "//mediapipe/model_maker/python/core/data:dataset",
+        "@model_maker_pip_deps_numpy//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
     ],
 )
 
@@ -47,39 +56,111 @@ py_test(
         ":model_util",
         ":quantization",
         ":test_util",
+        "@model_maker_pip_deps_absl_py//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
     ],
 )
 
 py_library(
     name = "file_util",
     srcs = ["file_util.py"],
+    deps = [
+        "@model_maker_pip_deps_requests//:pkg",
+    ],
 )
 
 py_test(
     name = "file_util_test",
     srcs = ["file_util_test.py"],
-    data = ["//mediapipe/model_maker/python/core/utils/testdata"],
+    data = [":testdata"],
     tags = ["requires-net:external"],
-    deps = [":file_util"],
+    deps = [
+        ":file_util",
+        "@model_maker_pip_deps_absl_py//:pkg",
+        "@model_maker_pip_deps_requests//:pkg",
+    ],
+)
+
+py_library(
+    name = "hub_loader",
+    srcs = ["hub_loader.py"],
+    deps = [
+        "@model_maker_pip_deps_tensorflow_hub//:pkg",
+    ],
+)
+
+py_test(
+    name = "hub_loader_test",
+    srcs = ["hub_loader_test.py"],
+    data = [":testdata"],
+    deps = [
+        ":hub_loader",
+        "//mediapipe/tasks/python/test:test_utils",
+        "@model_maker_pip_deps_absl_py//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
+    ],
 )
 
 py_library(
     name = "loss_functions",
     srcs = ["loss_functions.py"],
-    srcs_version = "PY3",
+    deps = [
+        ":file_util",
+        ":model_util",
+        "@model_maker_pip_deps_numpy//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
+        "@model_maker_pip_deps_tf_models_official//:pkg",
+    ],
 )
 
 py_test(
     name = "loss_functions_test",
     srcs = ["loss_functions_test.py"],
-    deps = [":loss_functions"],
+    tags = [
+        "requires-net:external",
+    ],
+    deps = [
+        ":loss_functions",
+        "@model_maker_pip_deps_absl_py//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
+    ],
+)
+
+######################################################################
+# Public target of the MediaPipe Model Maker Quantization Config.
+
+# Quantization Config is used to export a quantized model. Please refer
+# to the specific task documentations such as:
+# https://developers.google.com/mediapipe/solutions/vision/image_classifier/customize
+# for usage information.
+######################################################################
+py_library(
+    name = "metrics",
+    srcs = ["metrics.py"],
+    deps = [
+        "@model_maker_pip_deps_tensorflow//:pkg",
+    ],
+)
+
+py_test(
+    name = "metrics_test",
+    srcs = ["metrics_test.py"],
+    deps = [
+        ":metrics",
+        "@model_maker_pip_deps_absl_py//:pkg",
+        "@model_maker_pip_deps_numpy//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
+    ],
 )
 
 py_library(
     name = "quantization",
     srcs = ["quantization.py"],
-    srcs_version = "PY3",
-    deps = ["//mediapipe/model_maker/python/core/data:dataset"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mediapipe/model_maker/python/core/data:dataset",
+        "@model_maker_pip_deps_tensorflow//:pkg",
+    ],
 )
 
 py_test(
@@ -88,5 +169,7 @@ py_test(
     deps = [
         ":quantization",
         ":test_util",
+        "@model_maker_pip_deps_absl_py//:pkg",
+        "@model_maker_pip_deps_tensorflow//:pkg",
     ],
 )

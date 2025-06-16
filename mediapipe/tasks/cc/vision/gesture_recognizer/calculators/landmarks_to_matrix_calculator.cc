@@ -1,4 +1,4 @@
-/* Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+/* Copyright 2022 The MediaPipe Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -154,20 +154,20 @@ absl::Status ProcessLandmarks(LandmarkListT landmarks, CalculatorContext* cc) {
               !cc->Inputs().Tag(kImageSizeTag).IsEmpty());
     const auto [width, height] =
         cc->Inputs().Tag(kImageSizeTag).Get<std::pair<int, int>>();
-    ASSIGN_OR_RETURN(landmarks,
-                     NormalizeLandmarkAspectRatio(landmarks, width, height));
+    MP_ASSIGN_OR_RETURN(landmarks,
+                        NormalizeLandmarkAspectRatio(landmarks, width, height));
   }
 
   if (cc->Inputs().HasTag(kNormRectTag)) {
     RET_CHECK(!cc->Inputs().Tag(kNormRectTag).IsEmpty());
     const auto rotation =
         cc->Inputs().Tag(kNormRectTag).Get<NormalizedRect>().rotation();
-    ASSIGN_OR_RETURN(landmarks, RotateLandmarks(landmarks, rotation));
+    MP_ASSIGN_OR_RETURN(landmarks, RotateLandmarks(landmarks, rotation));
   }
 
   const auto& options = cc->Options<LandmarksToMatrixCalculatorOptions>();
   if (options.object_normalization()) {
-    ASSIGN_OR_RETURN(
+    MP_ASSIGN_OR_RETURN(
         landmarks,
         NormalizeObject(landmarks,
                         options.object_normalization_origin_offset()));

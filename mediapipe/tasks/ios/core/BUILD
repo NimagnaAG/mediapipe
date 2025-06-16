@@ -1,4 +1,4 @@
-# Copyright 2022 The MediaPipe Authors. All Rights Reserved.
+# Copyright 2022 The MediaPipe Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,25 +20,34 @@ objc_library(
     name = "MPPBaseOptions",
     srcs = ["sources/MPPBaseOptions.m"],
     hdrs = ["sources/MPPBaseOptions.h"],
+    deps = ["//third_party/apple_frameworks:Foundation"],
 )
 
 objc_library(
     name = "MPPTaskOptions",
     srcs = ["sources/MPPTaskOptions.m"],
     hdrs = ["sources/MPPTaskOptions.h"],
-    deps = [":MPPBaseOptions"],
+    deps = [
+        ":MPPBaseOptions",
+        "//third_party/apple_frameworks:Foundation",
+    ],
 )
 
 objc_library(
     name = "MPPTaskResult",
     srcs = ["sources/MPPTaskResult.m"],
     hdrs = ["sources/MPPTaskResult.h"],
+    deps = ["//third_party/apple_frameworks:Foundation"],
 )
 
 objc_library(
     name = "MPPTaskOptionsProtocol",
     hdrs = ["sources/MPPTaskOptionsProtocol.h"],
-    deps = ["//mediapipe/framework:calculator_options_cc_proto"],
+    deps = [
+        "//mediapipe/framework:calculator_options_cc_proto",
+        "//third_party/apple_frameworks:Foundation",
+        "@com_google_protobuf//:protobuf",
+    ],
 )
 
 objc_library(
@@ -47,7 +56,8 @@ objc_library(
     hdrs = ["sources/MPPTaskInfo.h"],
     copts = [
         "-ObjC++",
-        "-std=c++17",
+        "-std=c++20",
+        "-Xclang=-fno-cxx-modules",
     ],
     deps = [
         ":MPPTaskOptions",
@@ -58,6 +68,7 @@ objc_library(
         "//mediapipe/tasks/ios/common:MPPCommon",
         "//mediapipe/tasks/ios/common/utils:MPPCommonUtils",
         "//mediapipe/tasks/ios/common/utils:NSStringHelpers",
+        "//third_party/apple_frameworks:Foundation",
     ],
 )
 
@@ -67,11 +78,13 @@ objc_library(
     hdrs = ["sources/MPPTextPacketCreator.h"],
     copts = [
         "-ObjC++",
-        "-std=c++17",
+        "-std=c++20",
+        "-Xclang=-fno-cxx-modules",
     ],
     deps = [
         "//mediapipe/framework:packet",
         "//mediapipe/tasks/ios/common/utils:NSStringHelpers",
+        "//third_party/apple_frameworks:Foundation",
     ],
 )
 
@@ -81,12 +94,31 @@ objc_library(
     hdrs = ["sources/MPPTaskRunner.h"],
     copts = [
         "-ObjC++",
-        "-std=c++17",
+        "-std=c++20",
+        "-Xclang=-fno-cxx-modules",
     ],
     deps = [
+        ":MPPTaskInfo",
         "//mediapipe/framework:calculator_cc_proto",
         "//mediapipe/tasks/cc/core:mediapipe_builtin_op_resolver",
         "//mediapipe/tasks/cc/core:task_runner",
         "//mediapipe/tasks/ios/common/utils:MPPCommonUtils",
+        "//third_party/apple_frameworks:Foundation",
+        "@com_google_protobuf//:protobuf",
+    ],
+)
+
+objc_library(
+    name = "MPPPacketCreator",
+    srcs = ["sources/MPPPacketCreator.mm"],
+    hdrs = ["sources/MPPPacketCreator.h"],
+    copts = [
+        "-ObjC++",
+        "-std=c++20",
+        "-Xclang=-fno-cxx-modules",
+    ],
+    deps = [
+        "//mediapipe/framework:packet",
+        "//third_party/apple_frameworks:Foundation",
     ],
 )

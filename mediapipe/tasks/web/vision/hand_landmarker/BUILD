@@ -3,8 +3,8 @@
 # This task takes video frames and outputs synchronized frames along with
 # the detection results for one or more hand categories, using Hand Landmarker.
 
-load("//mediapipe/framework/port:build_config.bzl", "mediapipe_ts_declaration", "mediapipe_ts_library")
 load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
+load("//mediapipe/framework/port:build_config.bzl", "mediapipe_ts_declaration", "mediapipe_ts_library")
 
 package(default_visibility = ["//mediapipe/tasks:internal"])
 
@@ -16,6 +16,7 @@ mediapipe_ts_library(
     visibility = ["//visibility:public"],
     deps = [
         ":hand_landmarker_types",
+        ":hand_landmarks_connections",
         "//mediapipe/framework:calculator_jspb_proto",
         "//mediapipe/framework:calculator_options_jspb_proto",
         "//mediapipe/framework/formats:classification_jspb_proto",
@@ -26,6 +27,7 @@ mediapipe_ts_library(
         "//mediapipe/tasks/cc/vision/hand_landmarker/proto:hand_landmarks_detector_graph_options_jspb_proto",
         "//mediapipe/tasks/web/components/containers:category",
         "//mediapipe/tasks/web/components/containers:landmark",
+        "//mediapipe/tasks/web/components/processors:landmark_result",
         "//mediapipe/tasks/web/core",
         "//mediapipe/tasks/web/vision/core:image_processing_options",
         "//mediapipe/tasks/web/vision/core:vision_task_runner",
@@ -60,7 +62,7 @@ mediapipe_ts_library(
         ":hand_landmarker_types",
         "//mediapipe/framework:calculator_jspb_proto",
         "//mediapipe/framework/formats:classification_jspb_proto",
-        "//mediapipe/framework/formats:landmark_jspb_proto",
+        "//mediapipe/tasks/web/components/processors:landmark_result",
         "//mediapipe/tasks/web/core",
         "//mediapipe/tasks/web/core:task_runner_test_utils",
         "//mediapipe/tasks/web/vision/core:vision_task_runner",
@@ -69,6 +71,12 @@ mediapipe_ts_library(
 
 jasmine_node_test(
     name = "hand_landmarker_test",
+    srcs = [":hand_landmarker_test_lib"],
     tags = ["nomsan"],
-    deps = [":hand_landmarker_test_lib"],
+)
+
+mediapipe_ts_library(
+    name = "hand_landmarks_connections",
+    srcs = ["hand_landmarks_connections.ts"],
+    deps = ["//mediapipe/tasks/web/vision/core:types"],
 )
